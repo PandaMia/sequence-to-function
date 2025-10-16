@@ -1,5 +1,5 @@
 from typing import cast
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from utils.start_up import lifespan_start_up
 from configs.endpoints_base_models import AppState, StfRequest

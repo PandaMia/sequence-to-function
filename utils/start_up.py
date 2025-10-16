@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from openai import AsyncOpenAI, DefaultAioHttpClient
 
 from configs.endpoints_base_models import AppState
+from configs.database import create_tables
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,10 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan_start_up(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Starting the app...")
+
+    # Initialize database tables
+    await create_tables()
+    logger.info("Database tables created/verified")
 
     # Initialize the app state
     openai_api_key = os.environ["OPENAI_API_KEY"]

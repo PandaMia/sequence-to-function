@@ -4,3 +4,5 @@ uvicorn[standard]
 requests
 beautifulsoup4
 pydantic
+asyncpg
+sqlalchemy[asyncio]
