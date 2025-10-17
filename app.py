@@ -1,5 +1,5 @@
 from typing import cast
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from utils.start_up import lifespan_start_up
 from configs.endpoints_base_models import AppState, StfRequest
@@ -15,7 +15,10 @@ async def health_check():
 
 
 @app.post("/extract-sequence-function")
-async def extract_sequence_function(request: StfRequest):
+async def extract_sequence_function(
+    request: StfRequest,
+    session_id: str = Query(..., alias="session-id"),
+):
     """
     Extract protein/gene sequence-to-function relationships from a research article.
     
@@ -26,13 +29,16 @@ async def extract_sequence_function(request: StfRequest):
         Streaming response with extraction progress and results
     """
     return StreamingResponse(
-        run_stf_agent_stream(request, cast(AppState, app.state)),
-        media_type="text/plain"
+        run_stf_agent_stream(request, cast(AppState, app.state), session_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
     )
 
 
 if __name__ == "__main__":
     import uvicorn
+    from utils.start_up import configure_logging
+    configure_logging()
     uvicorn.run(app, host="0.0.0.0", port=8080)
 
     # Run: 

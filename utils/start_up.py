@@ -9,11 +9,27 @@ from openai import AsyncOpenAI, DefaultAioHttpClient
 from configs.endpoints_base_models import AppState
 from configs.database import create_tables
 
+# Configure logging
+def configure_logging():
+    """Configure logging for the application"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+        ]
+    )
+    # Set uvicorn logger to use the same configuration
+    logging.getLogger("uvicorn").setLevel(logging.INFO)
+    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan_start_up(app: FastAPI) -> AsyncIterator[None]:
+    # Configure logging first
+    configure_logging()
     logger.info("Starting the app...")
 
     # Initialize database tables

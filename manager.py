@@ -1,7 +1,7 @@
 import uuid
-import json
 import logging
-from typing import AsyncIterator
+import asyncio
+from typing import AsyncGenerator
 from agents import SQLiteSession
 from agents.items import TResponseInputItem
 from configs.endpoints_base_models import AppState, StfRequest
@@ -9,6 +9,7 @@ from configs.config import TaskModelConfig
 from stf_agents.agents import create_stf_agent
 from runner.stream import run_agent_stream
 from utils.create_config import create_stf_run_config
+from utils.sse import json_event
 
 
 logger = logging.getLogger(__name__)
@@ -17,89 +18,104 @@ logger = logging.getLogger(__name__)
 async def run_stf_agent_stream(
     request: StfRequest,
     app_state: AppState,
-) -> AsyncIterator[str]:
-    session_id = request.session_id or f"session_{uuid.uuid4().hex}"
+    session_id: str
+) -> AsyncGenerator[str, None]:
+    session_id = session_id or f"session_{uuid.uuid4().hex}"
+    event_queue: asyncio.Queue = asyncio.Queue()
+    
+    yield json_event("start", {"status": "started", "session_id": session_id})
 
-    try:
-        yield f"data: {json.dumps({'type': 'session_created', 'session_id': session_id})}\n\n"
+    async def process_stf_agent():
+        """Run STF agent and put events in queue"""
+        try:
+            logger.debug(
+                "Starting STF agent - session_id: %s, model: %s",
+                session_id, request.stf_model.model_name
+            )
 
-        logger.debug(
-            "Starting STF agent",
-            {"session_id": session_id, "model": request.stf_model.model_name},
-        )
+            stf_session = SQLiteSession(session_id)
 
-        stf_session = SQLiteSession(session_id)
+            logger.debug(
+                "Session STF initialized - session_id: %s, model: %s",
+                session_id, request.stf_model.model_name
+            )
 
-        logger.debug(
-            "Session STF initialized",
-            {"session_id": session_id, "model": request.stf_model.model_name},
-        )
+            # Check if session has existing history
+            existing_items = await stf_session.get_items()
+            if existing_items:
+                logger.warning(
+                    "Resuming session with %d existing items - this may cause errors if switching models - session_id: %s, model: %s",
+                    len(existing_items), session_id, request.stf_model.model_name
+                )        
 
-        # Check if session has existing history
-        existing_items = await stf_session.get_items()
-        if existing_items:
-            logger.warning(
-                f"Resuming session with {len(existing_items)} existing items - this may cause errors if switching models",
-                {
-                    "session_id": session_id,
-                    "item_count": len(existing_items),
-                    "model": request.stf_model.model_name,
-                },
-            )        
-
-        stf_model_config: TaskModelConfig = {
-            "model_name": request.stf_model.model_name,
-            "model_settings": request.stf_model.model_settings,
-        }
-
-        # Create run config with proper settings
-        run_config = create_stf_run_config(
-            openai_client=app_state.openai_client,
-            session_id=session_id,
-            stf_model_config=stf_model_config,
-        )
-
-        logger.debug(
-            "Run config created",
-            {"session_id": session_id, "model": request.stf_model.model_name},
-        )
-
-        agent = create_stf_agent(run_config)
-
-        logger.debug(
-            "Agent created",
-            {"session_id": session_id, "model": request.stf_model.model_name},
-        )
-
-        # Type: ignore needed because TypedDict structure is complex
-        initial_input: list[TResponseInputItem] = [
-            {
-                "type": "message",
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": f"Analyze the following article to extract sequence-to-function relationships. Link: {request.article_link}",
-                    },
-                ],
+            stf_model_config: TaskModelConfig = {
+                "model_name": request.stf_model.model_name,
+                "model_settings": request.stf_model.model_settings,
             }
-        ]
 
-        # Use simplified runner
-        async for event in run_agent_stream(
-            agent=agent,
-            initial_input=initial_input,
-            sql_session=stf_session,
-            run_config=run_config,
-            session_id=session_id,
-        ):
-            yield event
+            # Create run config with proper settings
+            run_config = create_stf_run_config(
+                openai_client=app_state.openai_client,
+                session_id=session_id,
+                stf_model_config=stf_model_config,
+            )
 
-    except Exception as e:
-        error_msg = str(e)
-        logger.error("Run STF agent stream error", {"session_id": session_id, "error": error_msg})
+            logger.debug(
+                "Run config created - session_id: %s, model: %s",
+                session_id, request.stf_model.model_name
+            )
 
-        yield f"data: {json.dumps({
-            'type': 'error',
-            'message': error_msg,
-        })}\n\n"
+            agent = create_stf_agent(run_config)
+
+            logger.debug(
+                "Agent created - session_id: %s, model: %s",
+                session_id, request.stf_model.model_name
+            )
+
+            # Type: ignore needed because TypedDict structure is complex
+            initial_input: list[TResponseInputItem] = [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": f"Analyze the following article to extract sequence-to-function relationships. Link: {request.article_link}",
+                        },
+                    ],
+                }
+            ]
+
+            # Run agent with event queue - no need to parse events
+            async for _ in run_agent_stream(
+                agent=agent,
+                initial_input=initial_input,
+                sql_session=stf_session,
+                run_config=run_config,
+                session_id=session_id,
+                event_queue=event_queue,
+            ):
+                # Events are put directly in the queue, so we just consume the empty iterator
+                pass
+
+            await event_queue.put(("done", {}))
+            
+        except Exception as e:
+            error_msg = str(e)
+            logger.error("Run STF agent stream error - session_id: %s, error: %s", session_id, error_msg)
+            await event_queue.put(("error", {"message": error_msg}))
+            await event_queue.put(("done", {}))
+
+    process_task = asyncio.create_task(process_stf_agent())
+
+    while True:
+        event_type, event_data = await event_queue.get()
+
+        # include session_id in each event payload
+        payload = {"session_id": session_id, **(event_data or {})}
+        yield json_event(event_type, payload)
+        
+        if event_type == "done":
+            break
+
+    await process_task

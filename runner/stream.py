@@ -1,6 +1,7 @@
 import json
 import logging
-from typing import AsyncIterator
+import asyncio
+from typing import AsyncIterator, Optional
 from agents import Agent, Runner, RunConfig, SQLiteSession, trace
 from agents.items import TResponseInputItem
 
@@ -14,6 +15,7 @@ async def run_agent_stream(
     sql_session: SQLiteSession,
     run_config: RunConfig,
     session_id: str,
+    event_queue: Optional[asyncio.Queue] = None,
 ) -> AsyncIterator[str]:
     """
     Run agent with streaming output.
@@ -24,10 +26,12 @@ async def run_agent_stream(
         sql_session: SQLiteSession session for persistence
         run_config: Run configuration
         session_id: Session ID for tracing
+        event_queue: Optional queue to put events into instead of yielding
 
     Yields:
-        SSE events as strings
+        SSE events as strings (only if event_queue is None)
     """
+    
     with trace("stf-agent", group_id=session_id):
         try:
             # Single run_streamed call - agent handles everything
@@ -50,17 +54,21 @@ async def run_agent_stream(
                         hasattr(event.data, "type")
                         and event.data.type == "response.reasoning_summary_text.delta"
                     ):
-                        yield json.dumps({
+                        event_data = {
                             'type': 'reasoning_delta',
                             'content': event.data.delta,
-                        })
+                        }
+                        if event_queue:
+                            await event_queue.put(('reasoning_delta', event_data))
+                        else:
+                            yield json.dumps(event_data)
 
                 # Handle run items
                 elif event.type == "run_item_stream_event":
                     if event.item.type == "reasoning_item":
                         logger.debug(
-                            {"session_id": session_id},
-                            "Reasoning completed",
+                            "Reasoning completed - session_id: %s",
+                            session_id
                         )
 
                     elif event.item.type == "tool_call_item":
@@ -85,70 +93,70 @@ async def run_agent_stream(
                         tool_call_count += 1
 
                         logger.info(
-                            {
-                                "session_id": session_id,
-                                "tool": tool_name,
-                                "tool_call_count": tool_call_count,
-                                "args": tool_args,
-                            },
-                            "Tool called",
+                            "Tool called - session_id: %s, tool: %s, tool_call_count: %d, args: %s",
+                            session_id, tool_name, tool_call_count, tool_args
                         )
 
                         # Stream tool call to client
-                        yield json.dumps({
+                        event_data = {
                             'type': 'tool_call',
                             'tool': tool_name,
                             'arguments': tool_args,
-                        })
+                        }
+                        if event_queue:
+                            await event_queue.put(('tool_call', event_data))
+                        else:
+                            yield json.dumps(event_data)
 
                     elif event.item.type == "tool_call_output_item":
                         output = event.item.output
 
                         logger.debug(
-                            "Tool output received",
-                            {
-                                "session_id": session_id,
-                                "output_preview": str(output)[:200],
-                                "has_visual_feedback": "VISUAL FEEDBACK:"
-                                in str(output),
-                            },
+                            "Tool output received - session_id: %s, output_preview: %s, has_visual_feedback: %s",
+                            session_id, str(output)[:200], "VISUAL FEEDBACK:" in str(output)
                         )
 
                         # Stream tool output to client
-                        yield json.dumps({
+                        event_data = {
                             'type': 'tool_output',
                             'content': str(output),
-                        })
+                        }
+                        if event_queue:
+                            await event_queue.put(('tool_output', event_data))
+                        else:
+                            yield json.dumps(event_data)
 
             # Agent completed - final_output is the response
             logger.info(
-                {
-                    "session_id": session_id,
-                    "tool_calls": tool_call_count,
-                },
-                "Agent run completed",
+                "Agent run completed - session_id: %s, tool_calls: %d",
+                session_id, tool_call_count
             )
 
             # Extract final output from agent
             final_output_text = str(result.final_output) if result.final_output else ""
 
             # Send final response (agent's natural completion)
-            yield json.dumps({
+            event_data = {
                 'type': 'final_response',
                 'content': final_output_text or 'Task execution completed',
-            })
+            }
+            if event_queue:
+                await event_queue.put(('final_response', event_data))
+            else:
+                yield json.dumps(event_data)
 
-            yield json.dumps({
+            event_data = {
                 'type': 'completed',
                 'tool_calls': tool_call_count,
-            })
+            }
+            if event_queue:
+                await event_queue.put(('completed', event_data))
+            else:
+                yield json.dumps(event_data)
 
         except Exception as e:
             logger.error(
-                "Agent execution failed",
-                {
-                    "session_id": session_id,
-                    "error": str(e),
-                },
+                "Agent execution failed - session_id: %s, error: %s",
+                session_id, str(e)
             )
             raise
