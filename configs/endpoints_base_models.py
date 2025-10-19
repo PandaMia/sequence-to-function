@@ -24,7 +24,7 @@ class ModelConfig(BaseModel):
 
 
 class StfRequest(BaseModel):
-    article_link: str
+    user_message: str
     session_id: Optional[str] = None
     stf_model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(

@@ -8,3 +8,4 @@ pydantic
 asyncpg
 sqlalchemy[asyncio]
 aiohttp
+pandas

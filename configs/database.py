@@ -1,8 +1,8 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import Column, String, Text, DateTime, Integer
-from datetime import datetime
+from sqlalchemy import Column, String, Text, DateTime, Integer, JSON
+from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 
@@ -10,16 +10,21 @@ class Base(DeclarativeBase):
     pass
 
 
-class SequenceFunctionExtraction(Base):
-    __tablename__ = "sequence_function_extractions"
+class SequenceData(Base):
+    __tablename__ = "sequence_data"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String(255), nullable=False, index=True)
-    article_link = Column(Text, nullable=False)
-    extraction_data = Column(Text)  # JSON data from extraction
-    model_name = Column(String(100))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    gene_protein_name = Column(String(255), nullable=False, index=True)
+    protein_sequence = Column(Text)
+    dna_sequence = Column(Text)
+    intervals = Column(JSON)  # Array of interval objects
+    modifications = Column(JSON)  # Array of modification objects
+    longevity_association = Column(Text)
+    citations = Column(JSON)  # Array of citation strings
+    article_url = Column(Text)
+    extracted_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 # Database configuration

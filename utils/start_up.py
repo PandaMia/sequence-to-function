@@ -8,6 +8,8 @@ from openai import AsyncOpenAI, DefaultAioHttpClient
 
 from configs.endpoints_base_models import AppState
 from configs.database import create_tables
+from utils.database_service import DatabaseService
+
 
 # Configure logging
 def configure_logging():
@@ -35,6 +37,9 @@ async def lifespan_start_up(app: FastAPI) -> AsyncIterator[None]:
     # Initialize database tables
     await create_tables()
     logger.info("Database tables created/verified")
+    
+    # Initialize CSV and load data into database on startup
+    await DatabaseService.initialize_csv_data()
 
     # Initialize the app state
     openai_api_key = os.environ["OPENAI_API_KEY"]

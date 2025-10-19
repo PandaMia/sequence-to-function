@@ -6,7 +6,12 @@ from agents import SQLiteSession
 from agents.items import TResponseInputItem
 from configs.endpoints_base_models import AppState, StfRequest
 from configs.config import TaskModelConfig
-from stf_agents.agents import create_stf_agent
+from stf_agents.agents import (
+    create_stf_manager_agent,
+    create_article_parsing_agent,
+    create_data_retrieval_agent,
+    create_article_writing_agent,
+)
 from runner.stream import run_agent_stream
 from utils.create_config import create_stf_run_config
 from utils.sse import json_event
@@ -65,7 +70,18 @@ async def run_stf_agent_stream(
                 session_id, request.stf_model.model_name
             )
 
-            agent = create_stf_agent(run_config)
+            # Create specialized agents
+            article_parsing_agent = create_article_parsing_agent(run_config)
+            data_retrieval_agent = create_data_retrieval_agent(run_config)
+            article_writing_agent = create_article_writing_agent(run_config, data_retrieval_agent)
+            
+            # Create manager agent with handoffs
+            agent = create_stf_manager_agent(
+                run_config, 
+                article_parsing_agent,
+                data_retrieval_agent, 
+                article_writing_agent
+            )
 
             logger.debug(
                 "Agent created - session_id: %s, model: %s",
@@ -80,7 +96,7 @@ async def run_stf_agent_stream(
                     "content": [
                         {
                             "type": "input_text",
-                            "text": f"Analyze the following article to extract sequence-to-function relationships. Link: {request.article_link}",
+                            "text": request.user_message,
                         },
                     ],
                 }

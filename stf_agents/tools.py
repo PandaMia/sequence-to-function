@@ -1,14 +1,17 @@
 import json
-import os
-import asyncio
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from agents import function_tool
+from sqlalchemy import text
 from configs.database import get_db
 from utils.database_service import DatabaseService
 
 
+logger = logging.getLogger(__name__)
+
+
 @function_tool
-def save_to_database(
+async def save_to_database(
     gene_protein_name: str,
     protein_sequence: str,
     dna_sequence: str,
@@ -16,9 +19,7 @@ def save_to_database(
     modifications: str,
     longevity_association: str,
     citations: str,
-    article_url: str,
-    session_id: str = None,
-    model_name: str = "unknown"
+    article_url: str
 ) -> str:
     """
     Save extracted sequence-to-function data to PostgreSQL database.
@@ -32,8 +33,6 @@ def save_to_database(
         longevity_association: Description of association with longevity/aging
         citations: JSON string of citation references
         article_url: URL of the source article
-        session_id: Optional session ID for tracking
-        model_name: Name of the AI model used for extraction
         
     Returns:
         Success message with database ID
@@ -46,56 +45,33 @@ def save_to_database(
     except json.JSONDecodeError as e:
         return f"Error parsing JSON data: {str(e)}"
     
-    # Create the data structure
-    extraction_data = {
-        "gene_protein_name": gene_protein_name,
-        "protein_sequence": protein_sequence,
-        "dna_sequence": dna_sequence,
-        "intervals": intervals_data,
-        "modifications": modifications_data,
-        "longevity_association": longevity_association,
-        "citations": citations_data,
-        "extracted_at": datetime.now().isoformat(),
-    }
-    
-    # Save to PostgreSQL database
-    async def _save_to_postgres():
-        try:
-            async for db_session in get_db():
-                extraction_id = await DatabaseService.save_extraction(
-                    session_id=session_id or f"tool_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                    article_link=article_url,
-                    extraction_data=extraction_data,
-                    model_name=model_name,
-                    db_session=db_session
-                )
-                return extraction_id
-        except Exception as e:
-            raise e
+    logger.info(f"save_to_database called for gene: {gene_protein_name}")
     
     try:
-        # Run the async function
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If we're already in an async context, we need to handle this differently
-            return "Database save queued - will be processed asynchronously"
-        else:
-            extraction_id = loop.run_until_complete(_save_to_postgres())
-            return f"Successfully saved sequence-to-function data to PostgreSQL with ID: {extraction_id}"
+        # Since this is now an async function, we can directly use async/await
+        async for db_session in get_db():
+            logger.info("Got database session")
+            # Create extracted_at timestamp
+            extracted_at = datetime.now(timezone.utc)
+            
+            logger.info(f"Calling DatabaseService.save_sequence_data for {gene_protein_name}")
+            sequence_id = await DatabaseService.save_sequence_data(
+                gene_protein_name=gene_protein_name,
+                protein_sequence=protein_sequence,
+                dna_sequence=dna_sequence,
+                intervals=intervals_data,
+                modifications=modifications_data,
+                longevity_association=longevity_association,
+                citations=citations_data,
+                article_url=article_url,
+                extracted_at=extracted_at,
+                db_session=db_session
+            )
+            logger.info(f"Database save completed with ID: {sequence_id}")
+            return f"Successfully saved sequence-to-function data to PostgreSQL with ID: {sequence_id}"
     except Exception as e:
-        # Fallback to JSON file if database fails
-        data_dir = "data"
-        os.makedirs(data_dir, exist_ok=True)
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_gene_name = "".join(c for c in gene_protein_name if c.isalnum() or c in ('-', '_')).strip()
-        filename = f"{safe_gene_name}_{timestamp}.json"
-        filepath = os.path.join(data_dir, filename)
-        
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(extraction_data, f, indent=2, ensure_ascii=False)
-        
-        return f"Database save failed ({str(e)}), saved to fallback file: {filepath}"
+        logger.error(f"Database save failed for gene {gene_protein_name}: {str(e)}", exc_info=True)
+        return f"Database save failed: {str(e)}"
 
 
 @function_tool
@@ -163,3 +139,51 @@ def fetch_article_content(url: str) -> str:
         
     except Exception as e:
         return f"Error fetching article: {str(e)}"
+
+
+@function_tool
+async def execute_sql_query(query: str) -> str:
+    """
+    Execute a SQL query against the sequence-to-function database.
+    
+    Args:
+        query: SQL query to execute (SELECT statements only)
+        
+    Returns:
+        Query results formatted as JSON string
+    """
+    logger.info(f"Executing SQL query: {query[:100]}...")
+    
+    # Security check - only allow SELECT queries
+    query_lower = query.lower().strip()
+    if not query_lower.startswith('select'):
+        return "Error: Only SELECT queries are allowed for security reasons"
+    
+    try:
+        async for db_session in get_db():
+            result = await db_session.execute(text(query))
+            rows = result.fetchall()
+            
+            if not rows:
+                return "No results found for the query"
+            
+            # Convert rows to list of dictionaries
+            columns = result.keys()
+            results = []
+            for row in rows:
+                row_dict = {}
+                for i, col in enumerate(columns):
+                    value = row[i]
+                    # Handle JSON fields
+                    if isinstance(value, (dict, list)):
+                        row_dict[col] = value
+                    else:
+                        row_dict[col] = str(value) if value is not None else None
+                results.append(row_dict)
+            
+            logger.info(f"Query returned {len(results)} rows")
+            return json.dumps(results, indent=2, default=str)
+            
+    except Exception as e:
+        logger.error(f"SQL query failed: {str(e)}")
+        return f"Query execution failed: {str(e)}"
