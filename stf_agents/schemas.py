@@ -38,6 +38,10 @@ class FigureFinding(BaseModel):
     modifications: List[str] = []
     positions: List[int] = []
     claims: List[str] = []
+    relevance: bool = True
+    relevance_score: float = 1.0
+    reasoning: Optional[str] = None
+    kind: Optional[str] = None # e.g. "gel", "diagram", "logo", "icon"
 
 class ArticleContext(BaseModel):
     article_url: Optional[str] = None

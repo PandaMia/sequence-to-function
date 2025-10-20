@@ -35,7 +35,7 @@ def create_stf_manager_agent(
     return Agent(**agent_kwargs)
 
 
-def create_article_parsing_agent(run_config: RunConfig, request: StfRequest) -> Agent:
+def create_article_parsing_agent(run_config: RunConfig) -> Agent:
     agent_kwargs = {
         "name": "Article Parsing Agent",
         "instructions": prompts.ARTICLE_PARSING_INSTRUCTIONS,

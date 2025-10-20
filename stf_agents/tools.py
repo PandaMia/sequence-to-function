@@ -15,6 +15,33 @@ logger = logging.getLogger(__name__)
 
 MAX_URLS = 8
 
+BAD_EXT = (".svg", ".ico", ".gif")  # Images with these extensions are often logos or icons
+GOOD_HINTS = ("figure", "fig", "graph", "plot", "gel", "western", "microscop", "blot", "supp", "supplement")
+BAD_HINTS = ("logo", "icon", "avatar", "sprite", "banner", "ad", "advert", "cookie", "gdpr", "social", "share", "header", "footer", "nav")
+
+def is_relevant(img_tag, abs_url: str) -> bool:
+    u = abs_url.lower()
+    alt = (img_tag.get("alt") or "").lower()
+    classes = " ".join(img_tag.get("class") or []).lower()
+    id_attr = (img_tag.get("id") or "").lower()
+
+    if any(u.endswith(ext) for ext in BAD_EXT):
+        return False
+    if any(b in u for b in BAD_HINTS):
+        return False
+    if any(b in alt for b in BAD_HINTS):
+        return False
+    if any(b in classes for b in BAD_HINTS):
+        return False
+    if any(b in id_attr for b in BAD_HINTS):
+        return False
+    # приоритет: если встречаются научные подсказки — усиливаем шанс
+    if any(g in u for g in GOOD_HINTS) or any(g in classes for g in GOOD_HINTS):
+        return True
+    # fallback: если alt не пустой — оставляем
+    return bool(alt.strip())
+
+
 def _abs_url(base: str, url: str) -> Optional[str]:
     if not url:
         return None
@@ -22,6 +49,7 @@ def _abs_url(base: str, url: str) -> Optional[str]:
         return urllib.parse.urljoin(base, url)
     except Exception:
         return None
+
 
 
 @function_tool
@@ -75,14 +103,13 @@ async def save_to_database(
 
 
 @function_tool
-def fetch_article_content(url: str, user_request: str, analyze_images: bool = False) -> ArticleContext:
+def fetch_article_content(url: str, user_request: str) -> ArticleContext:
     """
     Fetch and extract content from a research article URL.
     
     Args:
         url: URL of the article to fetch
         user_request: Original user request for context in parsing
-        analyze_images: Whether to analyze images in the article
     Returns:
         ArticleContext object with extracted text and image URLs
     """
@@ -135,14 +162,17 @@ def fetch_article_content(url: str, user_request: str, analyze_images: bool = Fa
         
         # Remove excessive whitespace
         text = re.sub(r'\s+', ' ', text).strip()
+
         # Extract image URLs
         urls: List[str] = []
         for img in soup.find_all('img'):
-            img_url = img.get('src')  or img.get("data-src") or ""
-            if img_url:
-                checked_img_url = _abs_url(url, img_url)
-                if checked_img_url:
-                    urls.append(checked_img_url)
+            src = img.get('src') or img.get("data-src")
+            if not src:
+                continue
+
+            checked_img_url = _abs_url(url, src)
+            if checked_img_url and is_relevant(img, checked_img_url):
+                urls.append(checked_img_url)
 
         seen_urls = set()
         unique_urls = []
@@ -153,10 +183,9 @@ def fetch_article_content(url: str, user_request: str, analyze_images: bool = Fa
             if len(unique_urls) >= MAX_URLS:
                 break
         figures: List[FigureFinding] = []
-        if unique_urls and analyze_images:
+        if unique_urls:
             figs = vision_agent_process_images(unique_urls, hint=user_request)
             figures = figs or []
-            text += "\n\n[ANALYZED IMAGES]:\n" + "\n".join(analyze_images)
         article_context = ArticleContext(
             article_url=url,
             text=text,

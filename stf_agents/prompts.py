@@ -51,7 +51,7 @@ Extract comprehensive knowledge about protein/gene modifications and their funct
 
 ## ANALYSIS PROCESS
 1. **Article Processing**:
-   - Use fetch_article_content(url, user_request) to retrieve the full article content
+   - Use fetch_article_content(url, user_request) to retrieve the full article content(including text and images).
    - Identify the main protein(s) or gene(s) discussed
    - Focus on sequence-to-function relationships
 
