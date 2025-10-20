@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sequence-to-Function Chat</title>
+    <style>
+        /* @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap'); */
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier Prime', 'Courier New', monospace;
+            background: #000000;
+            color: #00ff00;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            margin: 0;
+            position: relative;
+        }
+
+        /* Matrix digital rain background */
+        #matrix-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0.1;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #001100, #003300);
+            color: #00ff00;
+            padding: 1rem 2rem;
+            text-align: center;
+            border-bottom: 1px solid #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes glow {
+            from { text-shadow: 0 0 10px #00ff00; }
+            to { text-shadow: 0 0 20px #00ff00, 0 0 30px #00ff00; }
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 1rem;
+            width: 100%;
+            height: calc(100vh - 120px); /* Reserve space for header */
+            min-height: 0; /* Allow flex shrinking */
+        }
+
+        .messages {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #00ff00;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            overflow-y: auto;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            backdrop-filter: blur(5px);
+            min-height: 0; /* Allow flex shrinking */
+        }
+
+        .messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .messages::-webkit-scrollbar-track {
+            background: #001100;
+        }
+
+        .messages::-webkit-scrollbar-thumb {
+            background: #00ff00;
+            border-radius: 4px;
+        }
+
+        .message {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            border: 1px solid #004400;
+            max-width: 90%;
+            background: rgba(0, 20, 0, 0.7);
+            animation: messageAppear 0.5s ease-in;
+        }
+
+        @keyframes messageAppear {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .user-message {
+            background: rgba(0, 50, 0, 0.8);
+            color: #00ff00;
+            margin-left: auto;
+            border-color: #00ff00;
+            text-align: right;
+        }
+
+        .bot-message {
+            background: rgba(0, 30, 0, 0.7);
+            color: #00ff00;
+            border-color: #006600;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 0.5rem;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 1rem;
+            border: 1px solid #00ff00;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.2);
+            flex-shrink: 0; /* Never shrink the input area */
+            position: sticky;
+            bottom: 0;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #00ff00;
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff00;
+            font-size: 1rem;
+            font-family: 'Courier Prime', monospace;
+            outline: none;
+        }
+
+        .message-input:focus {
+            box-shadow: 0 0 10px #00ff00;
+            border-color: #00ff00;
+        }
+
+        .message-input::placeholder {
+            color: #004400;
+        }
+
+        .send-button {
+            padding: 0.75rem 1.5rem;
+            background: linear-gradient(45deg, #001100, #003300);
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            cursor: pointer;
+            font-size: 1rem;
+            font-family: 'Courier Prime', monospace;
+            transition: all 0.2s;
+            text-transform: uppercase;
+        }
+
+        .send-button:hover:not(:disabled) {
+            background: linear-gradient(45deg, #002200, #005500);
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+            text-shadow: 0 0 5px #00ff00;
+        }
+
+        .send-button:disabled {
+            background: #001100;
+            color: #004400;
+            cursor: not-allowed;
+            border-color: #004400;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 1rem;
+            color: #00ff00;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .session-info {
+            background: rgba(0, 20, 0, 0.8);
+            padding: 0.5rem 1rem;
+            border: 1px solid #004400;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            color: #00ff00;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            flex-shrink: 0; /* Don't shrink session info */
+        }
+
+        .stream-message {
+            white-space: pre-wrap;
+            font-family: 'Courier Prime', monospace;
+            background: rgba(0, 10, 0, 0.6);
+            padding: 0.5rem;
+            margin: 0.25rem 0;
+            border-left: 3px solid #00ff00;
+            font-size: 0.9rem;
+        }
+
+        strong {
+            color: #00ff00;
+            text-shadow: 0 0 5px #00ff00;
+        }
+
+        ul {
+            color: #00ff00;
+        }
+
+        li {
+            margin: 0.25rem 0;
+        }
+
+        em {
+            color: #88ff88;
+            font-style: normal;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="matrix-canvas"></canvas>
+    
+    <div class="header">
+        <h1>SEQUENCE-TO-FUNCTION MATRIX</h1>
+        <p>ANALYZING RESEARCH ARTICLES // EXTRACTING SEQUENCE-FUNCTION RELATIONSHIPS</p>
+    </div>
+
+    <div class="chat-container">
+        <div class="session-info">
+            Session ID: <span id="session-id"></span>
+        </div>
+
+        <div class="messages" id="messages">
+            <div class="message bot-message">
+                <strong>SYSTEM:</strong> MATRIX CONNECTION ESTABLISHED...<br><br>
+                SEQUENCE-TO-FUNCTION ANALYSIS MODULE ONLINE<br><br>
+                AVAILABLE FUNCTIONS:
+                <ul style="margin-top: 0.5rem; margin-left: 1rem;">
+                    <li>ARTICLE INTERROGATION PROTOCOLS</li>
+                    <li>RESEARCH DATA PARSING ALGORITHMS</li>
+                    <li>PROTEIN/GENE SEQUENCE ANALYSIS</li>
+                </ul><br>
+                AWAITING INPUT...
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            PROCESSING DATA STREAM...
+        </div>
+
+        <div class="input-container">
+            <input 
+                type="text" 
+                class="message-input" 
+                id="message-input" 
+                placeholder="ENTER QUERY OR ARTICLE REQUEST..."
+                maxlength="1000"
+            >
+            <button class="send-button" id="send-button">EXECUTE</button>
+        </div>
+    </div>
+
+    <script>
+        // Matrix Digital Rain Effect (temporarily disabled for debugging)
+
+        class STFChat {
+            constructor() {
+                this.sessionId = this.generateSessionId();
+                this.messagesContainer = document.getElementById('messages');
+                this.messageInput = document.getElementById('message-input');
+                this.sendButton = document.getElementById('send-button');
+                this.loading = document.getElementById('loading');
+                this.currentStreamDiv = null;
+
+                this.init();
+            }
+
+            generateSessionId() {
+                return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            }
+
+            init() {
+                console.log('Initializing STFChat...');
+                document.getElementById('session-id').textContent = this.sessionId;
+                
+                console.log('Send button:', this.sendButton);
+                console.log('Message input:', this.messageInput);
+                console.log('Loading element:', this.loading);
+                console.log('Messages container:', this.messagesContainer);
+                
+                // Use arrow functions to preserve 'this' context
+                this.sendButton.addEventListener('click', (e) => {
+                    console.log('Execute button clicked');
+                    e.preventDefault();
+                    this.sendMessage();
+                });
+                
+                this.messageInput.addEventListener('keypress', (e) => {
+                    console.log('Key pressed:', e.key);
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+                
+                // Test button functionality
+                console.log('Adding test click handler...');
+                this.sendButton.onclick = () => {
+                    console.log('Direct onclick triggered');
+                    this.sendMessage();
+                };
+                
+                this.messageInput.focus();
+                console.log('Initialization complete');
+            }
+
+            addMessage(content, isUser = false) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+                
+                if (isUser) {
+                    messageDiv.innerHTML = `<strong>USER:</strong> ${this.escapeHtml(content)}`;
+                } else {
+                    messageDiv.innerHTML = `<strong>SYSTEM:</strong> ${content}`;
+                }
+                
+                this.messagesContainer.appendChild(messageDiv);
+                this.scrollToBottom();
+                return messageDiv;
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            scrollToBottom() {
+                this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+            }
+
+            setLoading(isLoading) {
+                this.loading.style.display = isLoading ? 'block' : 'none';
+                this.sendButton.disabled = isLoading;
+                this.messageInput.disabled = isLoading;
+            }
+
+            async sendMessage() {
+                console.log('sendMessage called');
+                const message = this.messageInput.value.trim();
+                console.log('Message:', message);
+                if (!message) {
+                    console.log('No message to send');
+                    return;
+                }
+
+                this.addMessage(message, true);
+                this.messageInput.value = '';
+                this.setLoading(true);
+
+                try {
+                    await this.streamResponse(message);
+                } catch (error) {
+                    console.error('Error:', error);
+                    this.addMessage('Sorry, there was an error processing your request. Please try again.');
+                } finally {
+                    this.setLoading(false);
+                    this.currentStreamDiv = null;
+                }
+            }
+
+            async streamResponse(userMessage) {
+                const url = `/extract-sequence-function?session-id=${encodeURIComponent(this.sessionId)}`;
+                
+                const requestBody = {
+                    user_message: userMessage,
+                    session_id: this.sessionId
+                };
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                this.currentStreamDiv = this.addMessage('PROCESSING DATA STREAM...');
+                let buffer = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') {
+                                continue;
+                            }
+                            
+                            try {
+                                const parsed = JSON.parse(data);
+                                this.handleStreamEvent(parsed);
+                            } catch (e) {
+                                this.appendToCurrentStream(data);
+                            }
+                        }
+                    }
+                }
+            }
+
+            handleStreamEvent(event) {
+                if (event.type === 'final_response') {
+                    this.currentStreamDiv.innerHTML = `<strong>SYSTEM:</strong> ${this.escapeHtml(event.content)}`;
+                } else if (event.type === 'error') {
+                    this.appendToCurrentStream(`ERROR: ${event.message}`, 'error');
+                } else if (event.type === 'status') {
+                    // Show status updates but don't accumulate them
+                    this.currentStreamDiv.innerHTML = `<strong>SYSTEM:</strong> <em>${this.escapeHtml(event.message)}</em>`;
+                }
+                // Ignore all other event types (agent_response, etc.) - only show final result
+            }
+
+            appendToCurrentStream(content, type = 'normal') {
+                if (!this.currentStreamDiv) return;
+
+                const streamDiv = document.createElement('div');
+                streamDiv.className = 'stream-message';
+                
+                if (type === 'error') {
+                    streamDiv.style.backgroundColor = '#ffe6e6';
+                    streamDiv.style.color = '#cc0000';
+                } else if (type === 'status') {
+                    streamDiv.style.backgroundColor = '#e6f3ff';
+                    streamDiv.style.color = '#0066cc';
+                }
+                
+                streamDiv.textContent = content;
+                this.currentStreamDiv.appendChild(streamDiv);
+                this.scrollToBottom();
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM Content Loaded');
+            console.log('Button element exists:', document.getElementById('send-button'));
+            console.log('Input element exists:', document.getElementById('message-input'));
+            
+            try {
+                // Temporarily disable Matrix animation to debug
+                // new MatrixRain();
+                console.log('MatrixRain skipped for debugging');
+                new STFChat();
+                console.log('STFChat initialized');
+            } catch (error) {
+                console.error('Initialization error:', error);
+            }
+        });
+    </script>
+</body>
+</html>
