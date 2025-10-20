@@ -2,8 +2,10 @@ import json
 import logging
 import asyncio
 from typing import AsyncIterator, Optional
+from unittest import result
 from agents import Agent, Runner, RunConfig, SQLiteSession
 from agents.items import TResponseInputItem
+from pydantic import BaseModel
 
 
 logger = logging.getLogger(__name__)
@@ -132,12 +134,24 @@ async def run_agent_stream(
         )
 
         # Extract final output from agent
-        final_output_text = str(result.final_output) if result.final_output else ""
+        #final_output_text = str(result.final_output) if result.final_output else ""
+        final_obj = result.final_output
 
         # Send final response (agent's natural completion)
+        
+
+        if isinstance(final_obj, BaseModel):
+            final_payload = final_obj.model_dump()
+        elif isinstance(final_obj, (dict, list)):
+            final_payload = final_obj
+        elif final_obj is None:
+            final_payload = {"message": "Task execution completed"}
+        else:
+            final_payload = {"message": str(final_obj)}
+
         event_data = {
             'type': 'final_response',
-            'content': final_output_text or 'Task execution completed',
+            'content': final_payload,
         }
         if event_queue:
             await event_queue.put(('final_response', event_data))

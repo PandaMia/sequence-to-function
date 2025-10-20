@@ -1,11 +1,13 @@
 from agents import Agent
 from agents import RunConfig
+from configs.endpoints_base_models import StfRequest
 import stf_agents.prompts as prompts
 from stf_agents.tools import (
     save_to_database,
     fetch_article_content,
     execute_sql_query,
 )
+from .schemas import ParsingOutput
 
 
 def create_stf_manager_agent(
@@ -33,7 +35,7 @@ def create_stf_manager_agent(
     return Agent(**agent_kwargs)
 
 
-def create_article_parsing_agent(run_config: RunConfig) -> Agent:
+def create_article_parsing_agent(run_config: RunConfig, request: StfRequest) -> Agent:
     agent_kwargs = {
         "name": "Article Parsing Agent",
         "instructions": prompts.ARTICLE_PARSING_INSTRUCTIONS,
@@ -44,6 +46,7 @@ def create_article_parsing_agent(run_config: RunConfig) -> Agent:
         "handoff_description": "",
         "model": run_config.model,
         "reset_tool_choice": True,
+        "output_type": ParsingOutput
     }
 
     if run_config.model_settings is not None:

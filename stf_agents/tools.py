@@ -1,50 +1,50 @@
 import json
 import logging
 from datetime import datetime, timezone
+import urllib
 from agents import function_tool
 from sqlalchemy import text
 from configs.database import get_db
+from stf_agents.subagents.vision_agent import vision_agent_process_images
 from utils.database_service import DatabaseService
+from typing import List, Optional
+from .schemas import Interval, Modification, Citation, ArticleContext, FigureFinding
 
 
 logger = logging.getLogger(__name__)
+
+MAX_URLS = 8
+
+def _abs_url(base: str, url: str) -> Optional[str]:
+    if not url:
+        return None
+    try:
+        return urllib.parse.urljoin(base, url)
+    except Exception:
+        return None
 
 
 @function_tool
 async def save_to_database(
     gene_protein_name: str,
-    protein_sequence: str,
-    dna_sequence: str,
-    intervals: str,
-    modifications: str,
-    longevity_association: str,
-    citations: str,
-    article_url: str
+    protein_sequence: str | None,
+    dna_sequence: str | None,
+    intervals: List[Interval],
+    modifications: List[Modification],
+    longevity_association: str | None,
+    citations: List[Citation],
+    article_url: str | None,
 ) -> str:
     """
     Save extracted sequence-to-function data to PostgreSQL database.
-    
-    Args:
-        gene_protein_name: Name or ID of the gene/protein
-        protein_sequence: The protein amino acid sequence
-        dna_sequence: The DNA nucleotide sequence
-        intervals: JSON string of sequence intervals with their functions
-        modifications: JSON string of modifications and their effects
-        longevity_association: Description of association with longevity/aging
-        citations: JSON string of citation references
-        article_url: URL of the source article
-        
-    Returns:
-        Success message with database ID
+    All list-like fields are already typed (no JSON strings).
+    Returns success message with DB ID.
     """
     # Parse JSON strings
-    try:
-        intervals_data = json.loads(intervals) if intervals else []
-        modifications_data = json.loads(modifications) if modifications else []
-        citations_data = json.loads(citations) if citations else []
-    except json.JSONDecodeError as e:
-        return f"Error parsing JSON data: {str(e)}"
-    
+    intervals_data = intervals or []
+    modifications_data = modifications or []
+    citations_data = citations or []
+
     logger.info(f"save_to_database called for gene: {gene_protein_name}")
     
     try:
@@ -75,15 +75,16 @@ async def save_to_database(
 
 
 @function_tool
-def fetch_article_content(url: str) -> str:
+def fetch_article_content(url: str, user_request: str, analyze_images: bool = False) -> ArticleContext:
     """
     Fetch and extract content from a research article URL.
     
     Args:
         url: URL of the article to fetch
-        
+        user_request: Original user request for context in parsing
+        analyze_images: Whether to analyze images in the article
     Returns:
-        Extracted text content from the article
+        ArticleContext object with extracted text and image URLs
     """
     try:
         import requests
@@ -134,11 +135,45 @@ def fetch_article_content(url: str) -> str:
         
         # Remove excessive whitespace
         text = re.sub(r'\s+', ' ', text).strip()
-        
-        return text
-        
+        # Extract image URLs
+        urls: List[str] = []
+        for img in soup.find_all('img'):
+            img_url = img.get('src')  or img.get("data-src") or ""
+            if img_url:
+                checked_img_url = _abs_url(url, img_url)
+                if checked_img_url:
+                    urls.append(checked_img_url)
+
+        seen_urls = set()
+        unique_urls = []
+        for u in urls:
+            if u not in seen_urls:
+                seen_urls.add(u)
+                unique_urls.append(u)
+            if len(unique_urls) >= MAX_URLS:
+                break
+        figures: List[FigureFinding] = []
+        if unique_urls and analyze_images:
+            figs = vision_agent_process_images(unique_urls, hint=user_request)
+            figures = figs or []
+            text += "\n\n[ANALYZED IMAGES]:\n" + "\n".join(analyze_images)
+        article_context = ArticleContext(
+            article_url=url,
+            text=text,
+            image_urls=unique_urls,
+            figures=figures
+        )
+        return article_context
+
     except Exception as e:
-        return f"Error fetching article: {str(e)}"
+        logger.error(f"Error fetching article content from {url}: {str(e)}", exc_info=True)
+        return ArticleContext(
+            article_url=url,
+            text=None,
+            image_urls=[],
+            figures=[],
+            error=str(e),
+        )
 
 
 @function_tool
