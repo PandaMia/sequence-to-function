@@ -1,12 +1,18 @@
 from typing import cast
 from fastapi import FastAPI, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from utils.start_up import lifespan_start_up
 from configs.endpoints_base_models import AppState, StfRequest
 from manager import run_stf_agent_stream
 
 
 app = FastAPI(lifespan=lifespan_start_up)
+
+
+@app.get("/")
+async def serve_chat_ui():
+    """Serve the chat UI interface."""
+    return FileResponse("chat_ui.html")
 
 
 @app.get("/health")
