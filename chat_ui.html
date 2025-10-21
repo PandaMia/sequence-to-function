@@ -230,6 +230,109 @@
             0%, 50% { opacity: 1; }
             51%, 100% { opacity: 0.7; }
         }
+
+        /* Markdown formatting styles */
+        .bot-message h1, .bot-message h2, .bot-message h3 {
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .bot-message h1 { font-size: 1.5rem; border-bottom: 1px solid #00ff00; padding-bottom: 0.25rem; }
+        .bot-message h2 { font-size: 1.3rem; }
+        .bot-message h3 { font-size: 1.1rem; }
+
+        .bot-message p {
+            margin: 0.5rem 0;
+            line-height: 1.6;
+        }
+
+        .bot-message code {
+            background: rgba(0, 50, 0, 0.8);
+            padding: 0.2rem 0.4rem;
+            border: 1px solid #004400;
+            border-radius: 2px;
+            font-family: 'Courier Prime', monospace;
+            color: #00ff00;
+        }
+
+        .bot-message pre {
+            background: rgba(0, 50, 0, 0.9);
+            border: 1px solid #00ff00;
+            padding: 1rem;
+            overflow-x: auto;
+            margin: 0.5rem 0;
+        }
+
+        .bot-message pre code {
+            background: none;
+            border: none;
+            padding: 0;
+        }
+
+        .bot-message blockquote {
+            border-left: 3px solid #00ff00;
+            margin: 0.5rem 0;
+            padding-left: 1rem;
+            color: #88ff88;
+        }
+
+        /* Table styles */
+        .bot-message table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1rem 0;
+            background: rgba(0, 20, 0, 0.9);
+            border: 2px solid #00ff00;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+        }
+
+        .bot-message th {
+            background: rgba(0, 50, 0, 0.9);
+            color: #00ff00;
+            padding: 0.75rem;
+            text-align: left;
+            border: 1px solid #00ff00;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-shadow: 0 0 5px #00ff00;
+        }
+
+        .bot-message td {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #004400;
+            color: #00ff00;
+        }
+
+        .bot-message tr:nth-child(even) {
+            background: rgba(0, 30, 0, 0.5);
+        }
+
+        .bot-message tr:hover {
+            background: rgba(0, 50, 0, 0.7);
+        }
+
+        /* Tool output styling */
+        .tool-output {
+            background: rgba(0, 20, 0, 0.8);
+            border-left: 3px solid #00ff00;
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            font-size: 0.9rem;
+            white-space: pre-wrap;
+            font-family: 'Courier Prime', monospace;
+        }
+
+        .tool-call {
+            background: rgba(0, 30, 0, 0.6);
+            border-left: 3px solid #88ff88;
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            font-size: 0.85rem;
+            color: #88ff88;
+        }
     </style>
 </head>
 <body>
@@ -275,7 +378,20 @@
         </div>
     </div>
 
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- DOMPurify for sanitizing HTML -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+
     <script>
+        // Configure marked.js
+        marked.setOptions({
+            breaks: true,
+            gfm: true,
+            headerIds: false,
+            mangle: false
+        });
+
         // Matrix Digital Rain Effect (temporarily disabled for debugging)
 
         class STFChat {
@@ -332,16 +448,140 @@
             addMessage(content, isUser = false) {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-                
+
                 if (isUser) {
                     messageDiv.innerHTML = `<strong>USER:</strong> ${this.escapeHtml(content)}`;
                 } else {
-                    messageDiv.innerHTML = `<strong>SYSTEM:</strong> ${content}`;
+                    // Render markdown for bot messages
+                    const renderedContent = this.renderMarkdown(content);
+                    messageDiv.innerHTML = `<strong>SYSTEM:</strong><br>${renderedContent}`;
                 }
-                
+
                 this.messagesContainer.appendChild(messageDiv);
                 this.scrollToBottom();
                 return messageDiv;
+            }
+
+            renderMarkdown(content) {
+                // First, try to detect and render JSON tables
+                const tableContent = this.tryRenderTable(content);
+                if (tableContent) {
+                    return tableContent;
+                }
+
+                // Otherwise render as markdown
+                const rawHtml = marked.parse(content);
+                return DOMPurify.sanitize(rawHtml);
+            }
+
+            tryRenderTable(content) {
+                // Try to parse content as JSON (array or object)
+                try {
+                    const parsed = JSON.parse(content);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        return this.jsonToTable(parsed);
+                    } else if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                        // Single object - convert to array with one item
+                        return this.jsonToTable([parsed]);
+                    }
+                } catch (e) {
+                    // Not JSON, continue
+                }
+
+                // Check if content contains JSON array
+                const jsonArrayMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+                if (jsonArrayMatch) {
+                    try {
+                        const parsed = JSON.parse(jsonArrayMatch[0]);
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            const beforeJson = content.substring(0, jsonArrayMatch.index);
+                            const afterJson = content.substring(jsonArrayMatch.index + jsonArrayMatch[0].length);
+
+                            const beforeHtml = beforeJson ? marked.parse(beforeJson) : '';
+                            const tableHtml = this.jsonToTable(parsed);
+                            const afterHtml = afterJson ? marked.parse(afterJson) : '';
+
+                            return DOMPurify.sanitize(beforeHtml + tableHtml + afterHtml);
+                        }
+                    } catch (e) {
+                        // Not valid JSON
+                    }
+                }
+
+                // Check if content contains JSON object
+                const jsonObjectMatch = content.match(/\{[\s\S]*\}/);
+                if (jsonObjectMatch) {
+                    try {
+                        const parsed = JSON.parse(jsonObjectMatch[0]);
+                        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                            const beforeJson = content.substring(0, jsonObjectMatch.index);
+                            const afterJson = content.substring(jsonObjectMatch.index + jsonObjectMatch[0].length);
+
+                            const beforeHtml = beforeJson ? marked.parse(beforeJson) : '';
+                            const tableHtml = this.jsonToTable([parsed]);
+                            const afterHtml = afterJson ? marked.parse(afterJson) : '';
+
+                            return DOMPurify.sanitize(beforeHtml + tableHtml + afterHtml);
+                        }
+                    } catch (e) {
+                        // Not valid JSON
+                    }
+                }
+
+                return null;
+            }
+
+            jsonToTable(jsonArray) {
+                if (!Array.isArray(jsonArray) || jsonArray.length === 0) {
+                    return '<p>No data available</p>';
+                }
+
+                // Get all unique keys from all objects
+                const allKeys = new Set();
+                jsonArray.forEach(obj => {
+                    Object.keys(obj).forEach(key => allKeys.add(key));
+                });
+                const keys = Array.from(allKeys);
+
+                let html = '<table>';
+
+                // Table header
+                html += '<thead><tr>';
+                keys.forEach(key => {
+                    html += `<th>${this.escapeHtml(key)}</th>`;
+                });
+                html += '</tr></thead>';
+
+                // Table body
+                html += '<tbody>';
+                jsonArray.forEach(row => {
+                    html += '<tr>';
+                    keys.forEach(key => {
+                        const value = row[key];
+                        let cellContent;
+
+                        if (value === null || value === undefined) {
+                            cellContent = '<em>null</em>';
+                        } else if (typeof value === 'object') {
+                            cellContent = this.escapeHtml(JSON.stringify(value, null, 2));
+                        } else {
+                            cellContent = this.escapeHtml(String(value));
+                        }
+
+                        html += `<td>${cellContent}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                html += '</tbody>';
+
+                html += '</table>';
+
+                // Add row count only for multiple rows
+                if (jsonArray.length > 1) {
+                    html += `<p style="margin-top: 0.5rem; font-size: 0.9rem; color: #88ff88;">Total rows: ${jsonArray.length}</p>`;
+                }
+
+                return html;
             }
 
             escapeHtml(text) {
@@ -407,9 +647,10 @@
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-                
+
                 this.currentStreamDiv = this.addMessage('PROCESSING DATA STREAM...');
                 let buffer = '';
+                let currentEvent = null;
 
                 while (true) {
                     const { value, done } = await reader.read();
@@ -420,17 +661,24 @@
                     buffer = lines.pop() || '';
 
                     for (const line of lines) {
-                        if (line.startsWith('data: ')) {
+                        if (line.startsWith('event: ')) {
+                            currentEvent = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
                             const data = line.slice(6);
                             if (data === '[DONE]') {
                                 continue;
                             }
-                            
+
                             try {
                                 const parsed = JSON.parse(data);
+                                // Add event type to parsed data if available
+                                if (currentEvent && !parsed.type) {
+                                    parsed.type = currentEvent;
+                                }
                                 this.handleStreamEvent(parsed);
+                                currentEvent = null; // Reset after processing
                             } catch (e) {
-                                this.appendToCurrentStream(data);
+                                console.error('Failed to parse SSE data:', e, data);
                             }
                         }
                     }
@@ -439,14 +687,41 @@
 
             handleStreamEvent(event) {
                 if (event.type === 'final_response') {
-                    this.currentStreamDiv.innerHTML = `<strong>SYSTEM:</strong> ${this.escapeHtml(event.content)}`;
+                    // Render final response with markdown and table support
+                    const renderedContent = this.renderMarkdown(event.content);
+                    this.currentStreamDiv.innerHTML = `<strong>SYSTEM:</strong><br>${renderedContent}`;
+                } else if (event.type === 'tool_call') {
+                    // Show tool calls for transparency
+                    const toolName = event.tool || 'unknown';
+                    const args = event.arguments ? JSON.stringify(event.arguments, null, 2) : '';
+                    const toolCallHtml = `<div class="tool-call"><strong>🔧 TOOL CALL:</strong> ${this.escapeHtml(toolName)}</div>`;
+                    this.appendHtmlToStream(toolCallHtml);
+                } else if (event.type === 'tool_output') {
+                    // Show tool outputs (especially for SQL queries with tables)
+                    const outputContent = this.tryRenderTable(event.content);
+                    if (outputContent) {
+                        // It's a table, render it nicely
+                        this.appendHtmlToStream(`<div class="tool-output">${outputContent}</div>`);
+                    }
+                    // Don't show raw tool output if it's not a table - keeps UI cleaner
                 } else if (event.type === 'error') {
                     this.appendToCurrentStream(`ERROR: ${event.message}`, 'error');
                 } else if (event.type === 'status') {
                     // Show status updates but don't accumulate them
                     this.currentStreamDiv.innerHTML = `<strong>SYSTEM:</strong> <em>${this.escapeHtml(event.message)}</em>`;
                 }
-                // Ignore all other event types (agent_response, etc.) - only show final result
+                // Ignore other event types for cleaner UI
+            }
+
+            appendHtmlToStream(htmlContent) {
+                if (!this.currentStreamDiv) return;
+
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = htmlContent;
+                while (tempDiv.firstChild) {
+                    this.currentStreamDiv.appendChild(tempDiv.firstChild);
+                }
+                this.scrollToBottom();
             }
 
             appendToCurrentStream(content, type = 'normal') {

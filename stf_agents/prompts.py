@@ -187,10 +187,22 @@ WHERE article_url ILIKE '%2020%';
 - Handle cases where no results are found gracefully
 
 # Response Format:
-1. Explain what you're searching for
-2. Show the SQL query you're using
-3. Execute the query and present results
-4. Provide interpretation of the findings
+**IMPORTANT**: Always return query results in their raw JSON format from the execute_sql_query tool. Do NOT format results as text.
+
+1. Briefly explain what you're searching for (1-2 sentences)
+2. Execute the query using execute_sql_query tool
+3. Return the JSON result directly without reformatting
+4. The UI will automatically render the JSON as a formatted table
+
+**Example Response:**
+"Here are all genes in the database:
+
+[
+  {"gene": "NFE2L2", "protein_uniprot_id": "Q16236", "interval": ""},
+  {"gene": "KEAP1", "protein_uniprot_id": "Q14145", "interval": "AA 442-488"}
+]"
+
+DO NOT format as text like "Gene: NFE2L2, UniProt: Q16236". Always keep JSON format.
 """
 
 
