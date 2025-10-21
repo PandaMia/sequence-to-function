@@ -1,7 +1,8 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import Column, String, Text, DateTime, Integer, JSON
+from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, text as sql_text
+from pgvector.sqlalchemy import Vector
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
@@ -12,7 +13,7 @@ class Base(DeclarativeBase):
 
 class SequenceData(Base):
     __tablename__ = "sequence_data"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     gene = Column(String(100), nullable=False, index=True)  # Gene name only (e.g., NFE2L2)
     protein_uniprot_id = Column(String(20), index=True)  # UniProt ID (e.g., Q16236)
@@ -28,6 +29,8 @@ class SequenceData(Base):
     extracted_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    # Vector embedding for semantic search (1536 dimensions for OpenAI text-embedding-3-small)
+    embedding = Column(Vector(1536))
 
 
 # Database configuration
@@ -50,4 +53,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def create_tables():
     async with engine.begin() as conn:
+        # Enable pgvector extension
+        await conn.execute(sql_text("CREATE EXTENSION IF NOT EXISTS vector"))
+        # Create tables
         await conn.run_sync(Base.metadata.create_all)
+        # Create index for vector similarity search using cosine distance
+        await conn.execute(sql_text(
+            "CREATE INDEX IF NOT EXISTS sequence_data_embedding_idx ON sequence_data USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+        ))

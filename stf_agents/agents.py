@@ -6,6 +6,7 @@ from stf_agents.tools import (
     fetch_article_content,
     execute_sql_query,
     get_uniprot_id,
+    semantic_search,
 )
 
 
@@ -60,6 +61,7 @@ def create_data_retrieval_agent(run_config: RunConfig) -> Agent:
         "instructions": prompts.DATA_RETRIEVAL_INSTRUCTIONS,
         "tools": [
             execute_sql_query,
+            semantic_search,
         ],
         "handoff_description": "",
         "model": run_config.model,

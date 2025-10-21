@@ -9,6 +9,8 @@ from openai import AsyncOpenAI, DefaultAioHttpClient
 from configs.endpoints_base_models import AppState
 from utils.sqlite_utils import ensure_db_folder_exists
 from utils.postgres_utils import initialize_postgres
+from utils.embeddings import EmbeddingService
+from utils.app_context import set_app_state_context
 
 
 # Configure logging
@@ -38,9 +40,6 @@ async def lifespan_start_up(app: FastAPI) -> AsyncIterator[None]:
     # SQLite operations: Ensure database folder exists for session storage
     ensure_db_folder_exists()
 
-    # PostgreSQL operations: Initialize tables and load CSV data
-    await initialize_postgres()
-
     # Initialize the app state
     openai_api_key = os.environ["OPENAI_API_KEY"]
 
@@ -50,8 +49,20 @@ async def lifespan_start_up(app: FastAPI) -> AsyncIterator[None]:
         http_client=DefaultAioHttpClient(),
     )
 
+    # Initialize embedding service BEFORE loading CSV data
+    embedding_service = EmbeddingService(openai_client)
+    logger.info("Embedding service initialized")
+
+    # Set initial app state context for CSV import
+    temp_app_state = type('obj', (object,), {'embedding_service': embedding_service})()
+    set_app_state_context(temp_app_state)
+
+    # Initialize Postgres database
+    await initialize_postgres()
+
     app_state = AppState(
         openai_client=openai_client,
+        embedding_service=embedding_service,
         port=int(os.getenv("PORT", 8080)),
     )
 

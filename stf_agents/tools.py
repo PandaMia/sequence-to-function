@@ -5,6 +5,8 @@ from agents import function_tool
 from sqlalchemy import text
 from configs.database import get_db
 from utils.database_service import DatabaseService
+from utils.embeddings import create_search_text
+from utils.app_context import get_embedding_service
 import mygene
 
 
@@ -236,3 +238,125 @@ async def execute_sql_query(query: str) -> str:
     except Exception as e:
         logger.error(f"SQL query failed: {str(e)}")
         return f"Query execution failed: {str(e)}"
+
+
+@function_tool
+async def semantic_search(
+    query: str,
+    limit: int = 5,
+    min_similarity: float = 0.5
+) -> str:
+    """
+    Perform semantic search on sequence data using vector similarity.
+
+    This searches for genes/proteins that are semantically similar to the query,
+    even if they don't contain the exact keywords.
+
+    Args:
+        query: Natural language search query (e.g., "genes related to oxidative stress response")
+        limit: Maximum number of results to return (default: 5, max: 20)
+        min_similarity: Minimum similarity threshold from 0.0 to 1.0 (default: 0.5)
+                       Only results with similarity >= this value will be returned.
+                       Higher values (0.7-0.9) = more strict, only very similar results
+                       Lower values (0.3-0.5) = more lenient, broader results
+
+    Returns:
+        JSON string with similar sequence data records and similarity scores
+    """
+    logger.info(f"🔍 SEMANTIC SEARCH - Query: {query[:100]}... (limit: {limit}, min_similarity: {min_similarity})")
+
+    # Validate parameters
+    if limit < 1:
+        limit = 5
+    if limit > 20:
+        limit = 20
+
+    # Validate similarity threshold
+    if min_similarity < 0.0:
+        min_similarity = 0.0
+    if min_similarity > 1.0:
+        min_similarity = 1.0
+
+    # Get embedding service from app context
+    embedding_service = get_embedding_service()
+    if not embedding_service:
+        error_msg = "Error: Embedding service not available. Cannot perform semantic search."
+        logger.error(f"❌ {error_msg}")
+        return error_msg
+
+    try:
+        # Generate embedding for the query
+        logger.info(f"📊 Generating embedding for query...")
+        query_embedding = await embedding_service.generate_embedding(query)
+        if not query_embedding:
+            error_msg = "Error: Failed to generate embedding for the query"
+            logger.error(f"❌ {error_msg}")
+            return error_msg
+
+        logger.info(f"✅ Embedding generated successfully! Dimensions: {len(query_embedding)}")
+        
+        # Perform similarity search using cosine distance with threshold
+        logger.info(f"🔎 Executing vector similarity search in PostgreSQL...")
+        async for db_session in get_db():
+            sql_query = text("""
+                SELECT
+                    id,
+                    gene,
+                    protein_uniprot_id,
+                    interval,
+                    function,
+                    modification_type,
+                    effect,
+                    longevity_association,
+                    citations,
+                    article_url,
+                    1 - (embedding <=> :query_embedding) as similarity
+                FROM sequence_data
+                WHERE embedding IS NOT NULL
+                    AND (1 - (embedding <=> :query_embedding)) >= :min_similarity
+                ORDER BY embedding <=> :query_embedding
+                LIMIT :limit
+            """)
+
+            logger.info(f"Executing pgvector similarity search with limit {limit}, min_similarity {min_similarity}")
+            result = await db_session.execute(
+                sql_query,
+                {
+                    "query_embedding": str(query_embedding),
+                    "limit": limit,
+                    "min_similarity": min_similarity
+                }
+            )
+            rows = result.fetchall()
+            logger.info(f"✅ Query executed! Found {len(rows)} results (min similarity: {min_similarity})")
+
+            if not rows:
+                return json.dumps({
+                    "message": f"No results found with similarity >= {min_similarity}. Try lowering min_similarity or check if database has records with embeddings.",
+                    "query": query,
+                    "min_similarity": min_similarity,
+                    "results": []
+                })
+
+            # Convert to list of dictionaries
+            columns = result.keys()
+            results = []
+            for row in rows:
+                row_dict = {}
+                for i, col in enumerate(columns):
+                    value = row[i]
+                    if isinstance(value, (dict, list)):
+                        row_dict[col] = value
+                    elif col == "similarity":
+                        # Format similarity as percentage
+                        row_dict[col] = f"{float(value) * 100:.2f}%"
+                    else:
+                        row_dict[col] = str(value) if value is not None else None
+                results.append(row_dict)
+
+            logger.info(f"Semantic search returned {len(results)} results")
+            return json.dumps(results, indent=2, default=str)
+
+    except Exception as e:
+        logger.error(f"Semantic search failed: {str(e)}")
+        return f"Semantic search failed: {str(e)}"

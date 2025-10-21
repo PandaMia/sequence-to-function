@@ -10,3 +10,4 @@ sqlalchemy[asyncio]
 aiohttp
 pandas
 mygene
+pgvector
