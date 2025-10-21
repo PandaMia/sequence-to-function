@@ -1,17 +1,6 @@
 from pydantic import BaseModel
 from typing import List, Optional
 
-class Interval(BaseModel):
-    start: int
-    end: int
-    function: str
-    evidence: List[str] = []
-
-class Modification(BaseModel):
-    type: str
-    position: Optional[int] = None
-    effect: Optional[str] = None
-
 class Citation(BaseModel):
     title: str
     authors: List[str] = []
@@ -20,11 +9,12 @@ class Citation(BaseModel):
     url: Optional[str] = None
 
 class ParsingOutput(BaseModel):
-    gene_protein_name: str
-    protein_sequence: Optional[str] = None
-    dna_sequence: Optional[str] = None
-    intervals: List[Interval] = []
-    modifications: List[Modification] = []
+    gene: str
+    protein_uniprot_id: Optional[str] = None
+    interval: Optional[str] = None
+    function: Optional[str] = None
+    modification_type: Optional[str] = None # e.g., "deletion", "substitution"
+    effect: Optional[str] = None # effect of the modification
     longevity_association: Optional[str] = None
     citations: List[Citation] = []
     article_url: Optional[str] = None

@@ -7,8 +7,6 @@ from sqlalchemy import text
 from configs.database import get_db
 from stf_agents.subagents.vision_agent import vision_agent_process_images
 from utils.database_service import DatabaseService
-from typing import List, Optional
-from .schemas import Interval, Modification, Citation, ArticleContext, FigureFinding
 
 
 logger = logging.getLogger(__name__)
@@ -53,28 +51,76 @@ def _abs_url(base: str, url: str) -> Optional[str]:
 
 
 @function_tool
+def get_uniprot_id(gene_name: str) -> str:
+    """
+    Get UniProt Swiss-Prot ID for a given gene name using mygene service.
+    
+    Args:
+        gene_name: The gene name to query (e.g., "NFE2L2", "KEAP1", "TP53")
+        
+    Returns:
+        UniProt Swiss-Prot ID as string, or empty string if not found
+    """
+    try:
+        mg = mygene.MyGeneInfo()
+        res = mg.query(gene_name, fields="uniprot")
+        
+        if not res or "hits" not in res or not res["hits"]:
+            return ""
+        
+        # Try to get Swiss-Prot ID from the hits
+        for hit in res["hits"]:
+            if "uniprot" in hit and hit["uniprot"]:
+                uniprot_data = hit["uniprot"]
+                
+                # Check if it's a dict with Swiss-Prot key
+                if isinstance(uniprot_data, dict) and "Swiss-Prot" in uniprot_data:
+                    swiss_prot = uniprot_data["Swiss-Prot"]
+                    if swiss_prot:
+                        # Swiss-Prot can be a string or list
+                        if isinstance(swiss_prot, list):
+                            return swiss_prot[0] if swiss_prot else ""
+                        else:
+                            return str(swiss_prot)
+                
+                # If Swiss-Prot not available, check if uniprot is directly a string
+                elif isinstance(uniprot_data, str):
+                    return uniprot_data
+                
+                # If uniprot is a list, take the first one
+                elif isinstance(uniprot_data, list) and uniprot_data:
+                    return str(uniprot_data[0])
+        
+        return ""
+        
+    except Exception:
+        return ""
+
+
+@function_tool
 async def save_to_database(
-    gene_protein_name: str,
-    protein_sequence: str | None,
-    dna_sequence: str | None,
-    intervals: List[Interval],
-    modifications: List[Modification],
-    longevity_association: str | None,
-    citations: List[Citation],
-    article_url: str | None,
+    gene: str,
+    protein_uniprot_id: str,
+    interval: str,
+    function: str,
+    modification_type: str,
+    effect: str,
+    longevity_association: str,
+    citations: str,
+    article_url: str
 ) -> str:
     """
     Save extracted sequence-to-function data to PostgreSQL database.
+    
     All list-like fields are already typed (no JSON strings).
     Returns success message with DB ID.
+        
+    Returns:
+        Success message with database ID
     """
-    # Parse JSON strings
-    intervals_data = intervals or []
-    modifications_data = modifications or []
     citations_data = citations or []
 
-    logger.info(f"save_to_database called for gene: {gene_protein_name}")
-    
+    logger.info(f"save_to_database called for gene: {gene}")
     try:
         # Since this is now an async function, we can directly use async/await
         async for db_session in get_db():
@@ -82,13 +128,14 @@ async def save_to_database(
             # Create extracted_at timestamp
             extracted_at = datetime.now(timezone.utc)
             
-            logger.info(f"Calling DatabaseService.save_sequence_data for {gene_protein_name}")
+            logger.info(f"Calling DatabaseService.save_sequence_data for {gene}")
             sequence_id = await DatabaseService.save_sequence_data(
-                gene_protein_name=gene_protein_name,
-                protein_sequence=protein_sequence,
-                dna_sequence=dna_sequence,
-                intervals=intervals_data,
-                modifications=modifications_data,
+                gene=gene,
+                protein_uniprot_id=protein_uniprot_id,
+                interval=interval,
+                function=function,
+                modification_type=modification_type,
+                effect=effect,
                 longevity_association=longevity_association,
                 citations=citations_data,
                 article_url=article_url,
@@ -98,7 +145,7 @@ async def save_to_database(
             logger.info(f"Database save completed with ID: {sequence_id}")
             return f"Successfully saved sequence-to-function data to PostgreSQL with ID: {sequence_id}"
     except Exception as e:
-        logger.error(f"Database save failed for gene {gene_protein_name}: {str(e)}", exc_info=True)
+        logger.error(f"Database save failed for gene {gene}: {str(e)}", exc_info=True)
         return f"Database save failed: {str(e)}"
 
 
@@ -251,3 +298,125 @@ async def execute_sql_query(query: str) -> str:
     except Exception as e:
         logger.error(f"SQL query failed: {str(e)}")
         return f"Query execution failed: {str(e)}"
+
+
+@function_tool
+async def semantic_search(
+    query: str,
+    limit: int = 5,
+    min_similarity: float = 0.5
+) -> str:
+    """
+    Perform semantic search on sequence data using vector similarity.
+
+    This searches for genes/proteins that are semantically similar to the query,
+    even if they don't contain the exact keywords.
+
+    Args:
+        query: Natural language search query (e.g., "genes related to oxidative stress response")
+        limit: Maximum number of results to return (default: 5, max: 20)
+        min_similarity: Minimum similarity threshold from 0.0 to 1.0 (default: 0.5)
+                       Only results with similarity >= this value will be returned.
+                       Higher values (0.7-0.9) = more strict, only very similar results
+                       Lower values (0.3-0.5) = more lenient, broader results
+
+    Returns:
+        JSON string with similar sequence data records and similarity scores
+    """
+    logger.info(f"🔍 SEMANTIC SEARCH - Query: {query[:100]}... (limit: {limit}, min_similarity: {min_similarity})")
+
+    # Validate parameters
+    if limit < 1:
+        limit = 5
+    if limit > 20:
+        limit = 20
+
+    # Validate similarity threshold
+    if min_similarity < 0.0:
+        min_similarity = 0.0
+    if min_similarity > 1.0:
+        min_similarity = 1.0
+
+    # Get embedding service from app context
+    embedding_service = get_embedding_service()
+    if not embedding_service:
+        error_msg = "Error: Embedding service not available. Cannot perform semantic search."
+        logger.error(f"❌ {error_msg}")
+        return error_msg
+
+    try:
+        # Generate embedding for the query
+        logger.info(f"📊 Generating embedding for query...")
+        query_embedding = await embedding_service.generate_embedding(query)
+        if not query_embedding:
+            error_msg = "Error: Failed to generate embedding for the query"
+            logger.error(f"❌ {error_msg}")
+            return error_msg
+
+        logger.info(f"✅ Embedding generated successfully! Dimensions: {len(query_embedding)}")
+        
+        # Perform similarity search using cosine distance with threshold
+        logger.info(f"🔎 Executing vector similarity search in PostgreSQL...")
+        async for db_session in get_db():
+            sql_query = text("""
+                SELECT
+                    id,
+                    gene,
+                    protein_uniprot_id,
+                    interval,
+                    function,
+                    modification_type,
+                    effect,
+                    longevity_association,
+                    citations,
+                    article_url,
+                    1 - (embedding <=> :query_embedding) as similarity
+                FROM sequence_data
+                WHERE embedding IS NOT NULL
+                    AND (1 - (embedding <=> :query_embedding)) >= :min_similarity
+                ORDER BY embedding <=> :query_embedding
+                LIMIT :limit
+            """)
+
+            logger.info(f"Executing pgvector similarity search with limit {limit}, min_similarity {min_similarity}")
+            result = await db_session.execute(
+                sql_query,
+                {
+                    "query_embedding": str(query_embedding),
+                    "limit": limit,
+                    "min_similarity": min_similarity
+                }
+            )
+            rows = result.fetchall()
+            logger.info(f"✅ Query executed! Found {len(rows)} results (min similarity: {min_similarity})")
+
+            if not rows:
+                return json.dumps({
+                    "message": f"No results found with similarity >= {min_similarity}. Try lowering min_similarity or check if database has records with embeddings.",
+                    "query": query,
+                    "min_similarity": min_similarity,
+                    "results": []
+                })
+
+            # Convert to list of dictionaries
+            columns = result.keys()
+            results = []
+            for row in rows:
+                row_dict = {}
+                for i, col in enumerate(columns):
+                    value = row[i]
+                    if isinstance(value, (dict, list)):
+                        row_dict[col] = value
+                    elif col == "similarity":
+                        # Format similarity as percentage
+                        row_dict[col] = f"{float(value) * 100:.2f}%"
+                    else:
+                        row_dict[col] = str(value) if value is not None else None
+                results.append(row_dict)
+
+            logger.info(f"Semantic search returned {len(results)} results")
+            return json.dumps(results, indent=2, default=str)
+
+    except Exception as e:
+        logger.error(f"Semantic search failed: {str(e)}")
+        return f"Semantic search failed: {str(e)}"

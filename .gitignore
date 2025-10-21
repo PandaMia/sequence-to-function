@@ -132,6 +132,11 @@ dmypy.json
 data/
 *.json
 
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
 # IDE settings
 .vscode/
 .idea/

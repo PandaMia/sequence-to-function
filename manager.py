@@ -15,6 +15,8 @@ from stf_agents.agents import (
 from runner.stream import run_agent_stream
 from utils.create_config import create_stf_run_config
 from utils.sse import json_event
+from utils.sqlite_utils import get_db_path
+from utils.app_context import set_app_state_context
 
 
 logger = logging.getLogger(__name__)
@@ -33,12 +35,16 @@ async def run_stf_agent_stream(
     async def process_stf_agent():
         """Run STF agent and put events in queue"""
         try:
+            # Set app state context for tools to access embedding service
+            set_app_state_context(app_state)
+
             logger.debug(
                 "Starting STF agent - session_id: %s, model: %s",
                 session_id, request.stf_model.model_name
             )
 
-            stf_session = SQLiteSession(session_id)
+            # SQLite operations: Create session for conversation history storage
+            stf_session = SQLiteSession(db_path=get_db_path("sessions.db"), session_id=session_id)
 
             logger.debug(
                 "Session STF initialized - session_id: %s, model: %s",
@@ -88,7 +94,6 @@ async def run_stf_agent_stream(
                 session_id, request.stf_model.model_name
             )
 
-            # Type: ignore needed because TypedDict structure is complex
             initial_input: list[TResponseInputItem] = [
                 {
                     "type": "message",
@@ -102,7 +107,6 @@ async def run_stf_agent_stream(
                 }
             ]
 
-            # Run agent with event queue - no need to parse events
             async for _ in run_agent_stream(
                 agent=agent,
                 initial_input=initial_input,

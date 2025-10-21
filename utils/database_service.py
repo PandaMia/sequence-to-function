@@ -5,10 +5,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, text
+from sqlalchemy import select, text
 import pandas as pd
 from configs.database import SequenceData, get_db
 from configs.config import CSV_FILE_PATH, CSV_HEADERS
+from utils.embeddings import create_search_text
+from utils.app_context import get_embedding_service
 
 
 logger = logging.getLogger(__name__)
@@ -18,11 +20,12 @@ class DatabaseService:
     
     @staticmethod
     async def save_sequence_data(
-        gene_protein_name: str,
-        protein_sequence: str,
-        dna_sequence: str,
-        intervals: list,
-        modifications: list,
+        gene: str,
+        protein_uniprot_id: str,
+        interval: str,
+        function: str,
+        modification_type: str,
+        effect: str,
         longevity_association: str,
         citations: list,
         article_url: str,
@@ -30,35 +33,58 @@ class DatabaseService:
         db_session: AsyncSession,
         export_to_csv: bool = True
     ) -> int:
-        """Save sequence data to PostgreSQL"""
+        """Save sequence data to PostgreSQL with automatic embedding generation"""
         try:
+            # Generate embedding for semantic search
+            embedding = None
+            embedding_service = get_embedding_service()
+            if embedding_service:
+                search_text = create_search_text(gene, function, effect, longevity_association)
+                if search_text:
+                    logger.info(f"📝 Generating embedding for gene: {gene}")
+                    logger.info(f"Search text: {search_text[:100]}...")
+                    embedding = await embedding_service.generate_embedding(search_text)
+                    if embedding:
+                        logger.info(f"✅ Embedding created! Dimensions: {len(embedding)}")
+                        logger.info(f"✅ Generated embedding for gene {gene} ({len(embedding)} dimensions)")
+                    else:
+                        logger.info(f"❌ Failed to generate embedding for gene {gene}")
+                        logger.warning(f"Failed to generate embedding for gene {gene}")
+                else:
+                    logger.info(f"⚠️  No search text for gene {gene}, skipping embedding")
+            else:
+                logger.info(f"⚠️  Embedding service not available, skipping embedding for {gene}")
+                logger.warning("Embedding service not initialized")
+
             sequence_data = SequenceData(
-                gene_protein_name=gene_protein_name,
-                protein_sequence=protein_sequence,
-                dna_sequence=dna_sequence,
-                intervals=intervals,
-                modifications=modifications,
+                gene=gene,
+                protein_uniprot_id=protein_uniprot_id,
+                interval=interval,
+                function=function,
+                modification_type=modification_type,
+                effect=effect,
                 longevity_association=longevity_association,
                 citations=citations,
                 article_url=article_url,
                 extracted_at=extracted_at,
-                created_at=datetime.now(timezone.utc)
+                created_at=datetime.now(timezone.utc),
+                embedding=embedding
             )
-            
+
             db_session.add(sequence_data)
             await db_session.commit()
             await db_session.refresh(sequence_data)
-            
+
             # Auto-export to CSV after saving (if enabled)
             if export_to_csv:
                 await DatabaseService.export_to_csv(CSV_FILE_PATH, db_session)
-            
-            logger.info(f"Saved sequence data with ID {sequence_data.id} for gene {gene_protein_name}")
+
+            logger.info(f"Saved sequence data with ID {sequence_data.id} for gene {gene}")
             return sequence_data.id
-            
+
         except Exception as e:
             await db_session.rollback()
-            logger.error(f"Error saving sequence data for gene {gene_protein_name}: {str(e)}")
+            logger.error(f"Error saving sequence data for gene {gene}: {str(e)}")
             raise
     
     @staticmethod
@@ -94,18 +120,17 @@ class DatabaseService:
             
             for _, row in df.iterrows():
                 try:
-                    intervals = json.loads(row['intervals']) if pd.notna(row['intervals']) and row['intervals'] else []
-                    modifications = json.loads(row['modifications']) if pd.notna(row['modifications']) and row['modifications'] else []
                     citations = json.loads(row['citations']) if pd.notna(row['citations']) and row['citations'] else []
                     
                     extracted_at = datetime.fromisoformat(row['extracted_at']) if pd.notna(row['extracted_at']) and row['extracted_at'] else None
                     
                     await DatabaseService.save_sequence_data(
-                        gene_protein_name=str(row['gene_protein_name']) if pd.notna(row['gene_protein_name']) else '',
-                        protein_sequence=str(row.get('protein_sequence', '')) if pd.notna(row.get('protein_sequence')) else '',
-                        dna_sequence=str(row.get('dna_sequence', '')) if pd.notna(row.get('dna_sequence')) else '',
-                        intervals=intervals,
-                        modifications=modifications,
+                        gene=str(row['gene']) if pd.notna(row['gene']) else '',
+                        protein_uniprot_id=str(row.get('protein_uniprot_id', '')) if pd.notna(row.get('protein_uniprot_id')) else '',
+                        interval=str(row.get('interval', '')) if pd.notna(row.get('interval')) else '',
+                        function=str(row.get('function', '')) if pd.notna(row.get('function')) else '',
+                        modification_type=str(row.get('modification_type', '')) if pd.notna(row.get('modification_type')) else '',
+                        effect=str(row.get('effect', '')) if pd.notna(row.get('effect')) else '',
                         longevity_association=str(row.get('longevity_association', '')) if pd.notna(row.get('longevity_association')) else '',
                         citations=citations,
                         article_url=str(row.get('article_url', '')) if pd.notna(row.get('article_url')) else '',
@@ -115,10 +140,8 @@ class DatabaseService:
                     )
                     
                 except Exception as e:
-                    logger.error(f"Error processing row {row.get('gene_protein_name', 'unknown')}: {str(e)}")
+                    logger.error(f"Error processing row {row.get('gene', 'unknown')}: {str(e)}")
                     continue
-            
-            logger.info(f"Successfully imported data from {csv_path}")
             return True
             
         except Exception as e:
@@ -139,11 +162,12 @@ class DatabaseService:
             for record in sequence_data:
                 data.append({
                     'id': record.id,
-                    'gene_protein_name': record.gene_protein_name,
-                    'protein_sequence': record.protein_sequence,
-                    'dna_sequence': record.dna_sequence,
-                    'intervals': json.dumps(record.intervals) if record.intervals else '',
-                    'modifications': json.dumps(record.modifications) if record.modifications else '',
+                    'gene': record.gene,
+                    'protein_uniprot_id': record.protein_uniprot_id,
+                    'interval': record.interval,
+                    'function': record.function,
+                    'modification_type': record.modification_type,
+                    'effect': record.effect,
                     'longevity_association': record.longevity_association,
                     'citations': json.dumps(record.citations) if record.citations else '',
                     'article_url': record.article_url,
@@ -163,37 +187,114 @@ class DatabaseService:
     
     @staticmethod
     async def initialize_csv_data():
-        """Initialize CSV file and load data into database on startup"""
-        
+        """
+        Initialize CSV file and check database on startup.
+
+        IMPORTANT: Does NOT clear existing database data.
+        Only creates CSV file if missing and checks record count.
+        """
+
         # Create empty CSV file with headers if it doesn't exist
         if not os.path.exists(CSV_FILE_PATH):
             os.makedirs(os.path.dirname(CSV_FILE_PATH), exist_ok=True)
             with open(CSV_FILE_PATH, 'w') as f:
                 f.write(",".join(CSV_HEADERS) + "\n")
             logger.info(f"Created empty CSV file at {CSV_FILE_PATH}")
-        
-        # Check if CSV file has data (more than just headers)
-        try:
-            df = pd.read_csv(CSV_FILE_PATH)
-            csv_has_data = len(df) > 0
-        except:
-            csv_has_data = False
-        
-        if csv_has_data:
-            # Clear existing data from database and reload from CSV
-            async for db_session in get_db():
-                # Clear the table
-                await db_session.execute(delete(SequenceData))
-                await db_session.execute(text("ALTER SEQUENCE sequence_data_id_seq RESTART WITH 1"))
-                await db_session.commit()
-                logger.info("Cleared existing sequence_data table and reset ID sequence")
-                
-                # Load CSV data into database
+
+        # Check database status
+        async for db_session in get_db():
+            # Count existing records
+            result = await db_session.execute(text("SELECT COUNT(*) FROM sequence_data"))
+            count = result.scalar()
+
+            logger.info(f"Database has {count} existing records")
+
+            # Only import CSV if database is empty
+            if count == 0:
+                logger.info("Database is empty, importing from CSV...")
                 success = await DatabaseService.import_csv_to_database(CSV_FILE_PATH, db_session)
                 if success:
                     logger.info(f"Successfully loaded CSV data from {CSV_FILE_PATH}")
                 else:
                     logger.warning(f"Failed to load CSV data from {CSV_FILE_PATH}")
-                break
-        else:
-            logger.info("CSV file is empty, no data to import")
+            else:
+                logger.info("Database already has data, skipping CSV import")
+
+                # Check for records without embeddings
+                result = await db_session.execute(
+                    text("SELECT COUNT(*) FROM sequence_data WHERE embedding IS NULL")
+                )
+                missing_embeddings = result.scalar()
+
+                if missing_embeddings > 0:
+                    logger.info(
+                        f"Found {missing_embeddings} records without embeddings. "
+                        "Generating embeddings automatically..."
+                    )
+                    generated = await DatabaseService.generate_missing_embeddings(db_session)
+                    logger.info(f"Successfully generated {generated} embeddings")
+                else:
+                    logger.info("All records have embeddings")
+
+            break
+
+    @staticmethod
+    async def generate_missing_embeddings(db_session):
+        """
+        Generate embeddings for all records that don't have them.
+
+        This is useful when:
+        - Database was created before embeddings were implemented
+        - CSV import happened without embedding service
+        - Some records failed to generate embeddings
+
+        Args:
+            db_session: AsyncSession - database session to use
+        """
+        from utils.app_context import get_embedding_service
+
+        embedding_service = get_embedding_service()
+        if not embedding_service:
+            logger.error("Embedding service not available")
+            return 0
+
+        # Find records without embeddings
+        result = await db_session.execute(
+            select(SequenceData).where(SequenceData.embedding.is_(None))
+        )
+        records = result.scalars().all()
+
+        if not records:
+            logger.info("No records found without embeddings")
+            return 0
+
+        logger.info(f"Generating embeddings for {len(records)} records...")
+        generated = 0
+
+        for record in records:
+            try:
+                search_text = create_search_text(
+                    record.gene,
+                    record.function,
+                    record.effect,
+                    record.longevity_association
+                )
+
+                if search_text:
+                    embedding = await embedding_service.generate_embedding(search_text)
+                    if embedding:
+                        record.embedding = embedding
+                        generated += 1
+                        logger.debug(f"Generated embedding for gene {record.gene} (ID: {record.id})")
+                    else:
+                        logger.warning(f"Failed to generate embedding for gene {record.gene} (ID: {record.id})")
+                else:
+                    logger.warning(f"No search text for gene {record.gene} (ID: {record.id})")
+
+            except Exception as e:
+                logger.error(f"Error generating embedding for record {record.id}: {str(e)}")
+
+        # Commit all changes
+        await db_session.commit()
+        logger.info(f"Successfully generated {generated} embeddings out of {len(records)} records")
+        return generated

@@ -6,6 +6,8 @@ from stf_agents.tools import (
     save_to_database,
     fetch_article_content,
     execute_sql_query,
+    get_uniprot_id,
+    semantic_search,
 )
 from .schemas import ParsingOutput
 
@@ -41,6 +43,7 @@ def create_article_parsing_agent(run_config: RunConfig) -> Agent:
         "instructions": prompts.ARTICLE_PARSING_INSTRUCTIONS,
         "tools": [
             fetch_article_content,
+            get_uniprot_id,
             save_to_database,
         ],
         "handoff_description": "",
@@ -61,6 +64,7 @@ def create_data_retrieval_agent(run_config: RunConfig) -> Agent:
         "instructions": prompts.DATA_RETRIEVAL_INSTRUCTIONS,
         "tools": [
             execute_sql_query,
+            semantic_search,
         ],
         "handoff_description": "",
         "model": run_config.model,
