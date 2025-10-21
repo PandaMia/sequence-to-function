@@ -10,32 +10,25 @@ class Citation(BaseModel):
 
 class ParsingOutput(BaseModel):
     gene: str
-    protein_uniprot_id: Optional[str] = None
-    interval: Optional[str] = None
-    function: Optional[str] = None
-    modification_type: Optional[str] = None # e.g., "deletion", "substitution"
-    effect: Optional[str] = None # effect of the modification
-    longevity_association: Optional[str] = None
+    protein_uniprot_id: str
+    interval: str
+    function: str
+    modification_type: str # e.g., "deletion", "substitution"
+    effect: str # effect of the modification
+    longevity_association: str
     citations: List[Citation] = []
-    article_url: Optional[str] = None
-
-class FigureFinding(BaseModel):
-    figure_id: str
-    image_url: str
-    caption: Optional[str] = None
-    ocr_text: Optional[str] = None
-    proteins: List[str] = []
-    modifications: List[str] = []
-    positions: List[int] = []
-    claims: List[str] = []
-    relevance: bool = True
-    relevance_score: float = 1.0
-    reasoning: Optional[str] = None
-    kind: Optional[str] = None # e.g. "gel", "diagram", "logo", "icon"
+    article_url: str
 
 class ArticleContext(BaseModel):
     article_url: Optional[str] = None
     text: Optional[str]
     image_urls: List[str] = []
-    figures: List[FigureFinding] = []
+    pdf_urls: List[str] = []
     error: Optional[str] = None
+
+class MediaNote(BaseModel):
+    url: str               
+    kind: str   # "image" | "pdf"
+    description: str       # summary or caption
+    relevance: bool = True
+    relevance_score: float = 1.0

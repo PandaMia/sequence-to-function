@@ -333,6 +333,18 @@
             font-size: 0.85rem;
             color: #88ff88;
         }
+
+        /* Link styling */
+        .bot-message a {
+            color: #00ff00;
+            text-decoration: underline;
+            transition: all 0.2s;
+        }
+
+        .bot-message a:hover {
+            color: #88ff88;
+            text-shadow: 0 0 5px #00ff00;
+        }
     </style>
 </head>
 <body>
@@ -472,6 +484,65 @@
                 // Otherwise render as markdown
                 const rawHtml = marked.parse(content);
                 return DOMPurify.sanitize(rawHtml);
+            }
+
+            renderStructuredData(data) {
+                // Render structured data (objects/arrays) in a nice format
+                if (Array.isArray(data)) {
+                    // It's an array, render as table
+                    return this.jsonToTable(data);
+                } else if (typeof data === 'object' && data !== null) {
+                    // It's a single object
+                    // Check if it contains a nested object that looks like a result
+                    if (data.content && typeof data.content === 'object') {
+                        // Extract the nested content
+                        return this.renderStructuredData(data.content);
+                    }
+
+                    // Render single object as a key-value table
+                    return this.objectToTable(data);
+                }
+
+                // Fallback
+                return this.escapeHtml(JSON.stringify(data, null, 2));
+            }
+
+            objectToTable(obj) {
+                // Render a single object as a two-column key-value table
+                let html = '<table>';
+                html += '<thead><tr><th>Field</th><th>Value</th></tr></thead>';
+                html += '<tbody>';
+
+                for (const [key, value] of Object.entries(obj)) {
+                    let cellContent;
+
+                    if (value === null || value === undefined || value === '') {
+                        cellContent = '<em style="color: #004400; opacity: 0.7;">—</em>';
+                    } else if (Array.isArray(value)) {
+                        if (value.length === 0) {
+                            cellContent = '<em style="color: #004400; opacity: 0.7;">[]</em>';
+                        } else {
+                            cellContent = this.escapeHtml(JSON.stringify(value, null, 2));
+                        }
+                    } else if (typeof value === 'object') {
+                        cellContent = this.escapeHtml(JSON.stringify(value, null, 2));
+                    } else if (typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'))) {
+                        // Render URLs as clickable links
+                        cellContent = `<a href="${this.escapeHtml(value)}" target="_blank" style="color: #00ff00; text-decoration: underline;">${this.escapeHtml(value)}</a>`;
+                    } else {
+                        cellContent = this.escapeHtml(String(value));
+                    }
+
+                    // Make the key more readable (convert snake_case to Title Case)
+                    const readableKey = key.split('_').map(word =>
+                        word.charAt(0).toUpperCase() + word.slice(1)
+                    ).join(' ');
+
+                    html += `<tr><td><strong>${this.escapeHtml(readableKey)}</strong></td><td>${cellContent}</td></tr>`;
+                }
+
+                html += '</tbody></table>';
+                return html;
             }
 
             tryRenderTable(content) {
@@ -687,8 +758,20 @@
 
             handleStreamEvent(event) {
                 if (event.type === 'final_response') {
-                    // Render final response with markdown and table support
-                    const renderedContent = this.renderMarkdown(event.content);
+                    // Handle final response - could be structured data or text
+                    let renderedContent;
+
+                    if (typeof event.content === 'string') {
+                        // It's a string, render as markdown
+                        renderedContent = this.renderMarkdown(event.content);
+                    } else if (typeof event.content === 'object' && event.content !== null) {
+                        // It's structured data (object or array), render as table
+                        renderedContent = this.renderStructuredData(event.content);
+                    } else {
+                        // Fallback for other types
+                        renderedContent = this.escapeHtml(String(event.content));
+                    }
+
                     this.currentStreamDiv.innerHTML = `<strong>SYSTEM:</strong><br>${renderedContent}`;
                 } else if (event.type === 'tool_call') {
                     // Show tool calls for transparency

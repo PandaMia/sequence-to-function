@@ -72,6 +72,13 @@ async def run_agent_stream(
                         session_id
                     )
 
+                elif event.item.type == "message_item":
+                    # Skip intermediate message items from agents
+                    # These are the "I will analyze..." type messages we want to suppress
+                    logger.debug(
+                        "Skipping intermediate message item - session_id: %s",
+                        session_id
+                    )
                 elif event.item.type == "tool_call_item":
                     tool_name = None
                     tool_args = None
