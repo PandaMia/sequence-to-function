@@ -1,13 +1,22 @@
+import base64
 import json
 import logging
 from datetime import datetime, timezone
+import os
+import urllib
 from agents import function_tool
 from sqlalchemy import text
 from configs.database import get_db
 from utils.database_service import DatabaseService
-from utils.embeddings import create_search_text
 from utils.app_context import get_embedding_service
+from stf_agents.schemas import ArticleContext, MediaNote
 import mygene
+from typing import List, Optional, Tuple
+import requests
+from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 logger = logging.getLogger(__name__)
@@ -75,28 +84,15 @@ async def save_to_database(
     """
     Save extracted sequence-to-function data to PostgreSQL database.
     
-    Args:
-        gene: Gene name only (e.g., "NFE2L2")
-        protein_uniprot_id: UniProt ID (e.g., "Q16236") 
-        interval: Amino acid position range (e.g., "AA 76–93")
-        function: Description of what happens in that sequence interval
-        modification_type: Type of modification (deletion, substitution, etc.)
-        effect: Functional consequence of the modification
-        longevity_association: Description of association with longevity/aging
-        citations: JSON string of citation references
-        article_url: URL of the source article
+    All list-like fields are already typed (no JSON strings).
+    Returns success message with DB ID.
         
     Returns:
         Success message with database ID
     """
-    # Parse JSON strings
-    try:
-        citations_data = json.loads(citations) if citations else []
-    except json.JSONDecodeError as e:
-        return f"Error parsing JSON data: {str(e)}"
-    
+    citations_data = citations or []
+
     logger.info(f"save_to_database called for gene: {gene}")
-    
     try:
         # Since this is now an async function, we can directly use async/await
         async for db_session in get_db():
@@ -126,21 +122,29 @@ async def save_to_database(
 
 
 @function_tool
-def fetch_article_content(url: str) -> str:
+def fetch_article_content(url: str, user_request: str) -> ArticleContext:
     """
-    Fetch and extract content from a research article URL.
-    
+    Fetch and extract content from a research article URL including text, images, and PDFs.
     Args:
         url: URL of the article to fetch
-        
+        user_request: Original user request for context in parsing
+
     Returns:
-        Extracted text content from the article
+        ArticleContext object with extracted text and image URLs
     """
     try:
         import requests
-        from bs4 import BeautifulSoup
         import re
-        
+        from bs4 import BeautifulSoup
+
+        def _abs(base: str, url: str) -> Optional[str]:
+            if not url:
+                return None
+            try:
+                return urllib.parse.urljoin(base, url)
+            except Exception:
+                return None
+
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
@@ -185,11 +189,255 @@ def fetch_article_content(url: str) -> str:
         
         # Remove excessive whitespace
         text = re.sub(r'\s+', ' ', text).strip()
-        
-        return text
-        
+
+        # Extract images and PDFs - wrapped in try-except to handle blocked content
+        image_urls: List[str] = []
+        pdf_urls: List[str] = []
+
+        try:
+            BAD_EXT = (".svg", ".ico", ".gif")  # Images with these extensions are often logos or icons
+            GOOD_HINTS = ("figure", "fig", "graph", "plot", "gel", "western", "microscop", "blot", "supp", "supplement")
+            BAD_HINTS = ("logo", "icon", "avatar", "sprite", "banner", "ad", "advert", "cookie", "gdpr", "social", "share", "header", "footer", "nav")
+
+            def is_relevant(img_tag, abs_url: str) -> bool:
+                u = abs_url.lower()
+                alt = (img_tag.get("alt") or "").lower()
+                cls = " ".join(img_tag.get("class") or []).lower()
+                _id = (img_tag.get("id") or "").lower()
+                if any(u.endswith(ext) for ext in BAD_EXT): return False
+                if any(b in u for b in BAD_HINTS): return False
+                if any(b in alt for b in BAD_HINTS): return False
+                if any(b in cls for b in BAD_HINTS): return False
+                if any(b in _id for b in BAD_HINTS): return False
+                if any(g in u for g in GOOD_HINTS) or any(g in cls for g in GOOD_HINTS): return True
+                return bool(alt.strip())
+
+            # Extract image URLs
+            urls: List[str] = []
+            for img in soup.find_all('img'):
+                src = img.get('src') or img.get("data-src")
+                if not src:
+                    continue
+
+                checked_img_url = _abs(url, src)
+                if checked_img_url and is_relevant(img, checked_img_url):
+                    urls.append(checked_img_url)
+
+            image_urls = list(dict.fromkeys(urls))[:8]
+
+            # Extract PDF URLs
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if href and href.lower().endswith(".pdf"):
+                    pu = _abs(url, href)
+                    if pu: pdf_urls.append(pu)
+            pdf_urls = list(dict.fromkeys(pdf_urls))
+
+            logger.info(f"Successfully extracted {len(image_urls)} images and {len(pdf_urls)} PDFs from {url}")
+
+        except Exception as img_error:
+            # If image/PDF extraction fails (e.g., blocked content), log and continue with empty lists
+            logger.warning(f"Failed to extract images/PDFs from {url}: {str(img_error)}. Continuing with text only.")
+            image_urls = []
+            pdf_urls = []
+
+        return ArticleContext(
+            article_url=url,
+            text=text,
+            image_urls=image_urls,
+            pdf_urls=pdf_urls
+        )
+
+
     except Exception as e:
-        return f"Error fetching article: {str(e)}"
+        logger.error(f"Error fetching article content from {url}: {str(e)}", exc_info=True)
+        return ArticleContext(
+            article_url=url,
+            text=None,
+            image_urls=[],
+            pdf_urls=[],
+            error=str(e),
+        )
+
+
+def _download_b64(url: str) -> str:
+    """Download an image and convert to base64 data URL. Raises exception on failure."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.google.com/",
+    }
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+
+    # Validate it's actually an image
+    content_type = resp.headers.get('content-type', '')
+    if not content_type.startswith('image/'):
+        raise ValueError(f"URL did not return an image (content-type: {content_type})")
+
+    return "data:image/*;base64," + base64.b64encode(resp.content).decode("utf-8")
+
+
+def _download_pdf_bytes(url: str) -> Tuple[bytes, str]:
+    """Download a PDF from URL and return bytes and content-type. Raises exception on failure."""
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/pdf,*/*;q=0.8",
+    }
+    resp = requests.get(url, headers=headers, timeout=60)
+    resp.raise_for_status()
+
+    ct = resp.headers.get("content-type", "").lower()
+    if not (ct.startswith("application/pdf") or ct.startswith("application/octet-stream")):
+        if not resp.content.startswith(b"%PDF"):
+            raise ValueError(f"URL did not return a PDF (content-type: {ct})")
+        ct = "application/pdf"
+
+    return resp.content, ct
+
+@function_tool
+def vision_media(
+    image_urls: list[str],
+    pdf_urls: list[str],
+    hint: Optional[str] = None,
+    pdf_max_pages: int = 10
+) -> List[MediaNote]:
+    """
+    REQUIRED: Analyze images and PDFs from articles using AI vision to extract sequence data, mutations, functional assays, and structural information that may not be in text.
+
+    Scientific figures often contain critical data like:
+    - Sequence alignments showing mutations and conservation
+    - Western blots and functional assays showing protein activity
+    - Structural diagrams with domain annotations
+    - Tables with sequence positions and modifications
+
+    MUST be called when image_urls or pdf_urls are provided by fetch_article_content.
+
+    Args:
+        image_urls: List of image URLs from the article (from fetch_article_content result)
+        pdf_urls: List of PDF URLs from the article (from fetch_article_content result)
+        hint: Optional context about what to look for (e.g., "sequence modifications in KEAP1")
+        pdf_max_pages: Maximum pages to analyze from PDFs (default 10)
+
+    Returns:
+        List of MediaNote objects with relevance scores and descriptions for each image/PDF
+    """
+    logger.info(f"🔍 vision_media CALLED: {len(image_urls)} images, {len(pdf_urls)} PDFs")
+    try:
+        # Early return if no media to analyze
+        if not image_urls and not pdf_urls:
+            logger.warning("⚠️ vision_media: No media to analyze (empty lists)")
+            return []
+
+        sys_prompt = """
+            You are a scientific figure analyst.
+            For each provided image/pdf:
+            1) Classify its type (e.g., 'western blot', 'microscopy', 'diagram', 'logo', 'icon', 'banner').
+            2) Decide if the image is relevant to sequence-function analysis (relevance: true/false).
+            3) Provide a relevance_score in [0.0, 1.0] and a short reason.
+            4) If relevant, provide details about:
+            - proteins, modifications (with positions if visible),
+            - concise OCR-like summary (ocr_text),
+            - 1-3 concise claims.
+            Return one JSON object per input image (same order), with the schema ImageNotes.
+            If not relevant, still return the object with relevance=false, relevance_score, reason, and image_url; leave other fields empty.
+        """
+        user_prompt = "Analyze provided files for sequence-function evidence."
+        if hint:
+            user_prompt += f" Context hint: {hint}"
+
+        parts = [{"type": "input_text", "text": user_prompt}]
+        successful_images = 0
+        successful_pdfs = 0
+
+        # Process image URLs (download and convert to base64)
+        if image_urls:
+            for url in image_urls:
+                try:
+                    parts.append({"type": "input_image", "image_url": _download_b64(url)})
+                    successful_images += 1
+                    logger.info(f"Successfully loaded image: {url}")
+                except Exception as e:
+                    logger.error(
+                        "Failed to download image from URL: %s, error: %s", url, str(e)
+                    )
+
+        # Process PDF URLs (pass directly without downloading)
+        if pdf_urls:
+            for url in pdf_urls:
+                try:
+                    parts.append({
+                        "type": "input_image",
+                        "image_url": _download_pdf_bytes(url),  # PDF URL passed directly
+                    })
+                    successful_pdfs += 1
+                    logger.info(f"Successfully added PDF: {url}")
+                except Exception as e:
+                    logger.error(
+                        "Failed to add PDF from URL: %s, error: %s", url, str(e)
+                    )
+
+        # If no images or PDFs were successfully loaded, return empty list
+        if successful_images == 0 and successful_pdfs == 0:
+            logger.warning("No images or PDFs successfully loaded for vision analysis")
+            return []
+
+        logger.info(f"Analyzing {successful_images} images and {successful_pdfs} PDFs with vision API")
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        notes: List[MediaNote] = []
+
+        resp = client.responses.create(
+            model="gpt-5-mini",
+            input=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": parts},
+            ],
+            text={
+                "format":{
+                    "type":"json_schema",
+                    "name":"ImageNotes",
+                    "schema":{
+                        "type":"object",
+                        "properties":{
+                            "notes":{
+                                "type":"array",
+                                "items":{
+                                    "type":"object",
+                                    "properties":{
+                                        "url":{"type":"string"},
+                                        "kind":{"type":"string","enum":["image"]},
+                                        "description":{"type":"string"},
+                                        "relevance":{"type":"boolean"},
+                                        "relevance_score":{"type":"number"}
+                                    },
+                                    "required":["url","kind","description","relevance","relevance_score"],
+                                    "additionalProperties": False
+                                }
+                            }
+                        },
+                        "required":["notes"],
+                        "additionalProperties": False
+                    },
+                    "strict": True
+                }
+            },
+        )
+
+        data = json.loads(resp.output_text or "{}")
+        items = data.get("notes", [])
+        for it in items:
+            notes.append(MediaNote(
+                url=it["url"], kind="image",
+                description=it["description"],
+                relevance=it["relevance"],
+                relevance_score=float(it["relevance_score"])
+            ))
+        return notes
+    except Exception as e:
+        logger.error(f"vision_media failed: {str(e)}", exc_info=True)
+        return []
+
 
 
 @function_tool
