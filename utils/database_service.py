@@ -18,11 +18,12 @@ class DatabaseService:
     
     @staticmethod
     async def save_sequence_data(
-        gene_protein_name: str,
-        protein_sequence: str,
-        dna_sequence: str,
-        intervals: list,
-        modifications: list,
+        gene: str,
+        protein_uniprot_id: str,
+        interval: str,
+        function: str,
+        modification_type: str,
+        effect: str,
         longevity_association: str,
         citations: list,
         article_url: str,
@@ -33,11 +34,12 @@ class DatabaseService:
         """Save sequence data to PostgreSQL"""
         try:
             sequence_data = SequenceData(
-                gene_protein_name=gene_protein_name,
-                protein_sequence=protein_sequence,
-                dna_sequence=dna_sequence,
-                intervals=intervals,
-                modifications=modifications,
+                gene=gene,
+                protein_uniprot_id=protein_uniprot_id,
+                interval=interval,
+                function=function,
+                modification_type=modification_type,
+                effect=effect,
                 longevity_association=longevity_association,
                 citations=citations,
                 article_url=article_url,
@@ -53,12 +55,12 @@ class DatabaseService:
             if export_to_csv:
                 await DatabaseService.export_to_csv(CSV_FILE_PATH, db_session)
             
-            logger.info(f"Saved sequence data with ID {sequence_data.id} for gene {gene_protein_name}")
+            logger.info(f"Saved sequence data with ID {sequence_data.id} for gene {gene}")
             return sequence_data.id
             
         except Exception as e:
             await db_session.rollback()
-            logger.error(f"Error saving sequence data for gene {gene_protein_name}: {str(e)}")
+            logger.error(f"Error saving sequence data for gene {gene}: {str(e)}")
             raise
     
     @staticmethod
@@ -94,18 +96,17 @@ class DatabaseService:
             
             for _, row in df.iterrows():
                 try:
-                    intervals = json.loads(row['intervals']) if pd.notna(row['intervals']) and row['intervals'] else []
-                    modifications = json.loads(row['modifications']) if pd.notna(row['modifications']) and row['modifications'] else []
                     citations = json.loads(row['citations']) if pd.notna(row['citations']) and row['citations'] else []
                     
                     extracted_at = datetime.fromisoformat(row['extracted_at']) if pd.notna(row['extracted_at']) and row['extracted_at'] else None
                     
                     await DatabaseService.save_sequence_data(
-                        gene_protein_name=str(row['gene_protein_name']) if pd.notna(row['gene_protein_name']) else '',
-                        protein_sequence=str(row.get('protein_sequence', '')) if pd.notna(row.get('protein_sequence')) else '',
-                        dna_sequence=str(row.get('dna_sequence', '')) if pd.notna(row.get('dna_sequence')) else '',
-                        intervals=intervals,
-                        modifications=modifications,
+                        gene=str(row['gene']) if pd.notna(row['gene']) else '',
+                        protein_uniprot_id=str(row.get('protein_uniprot_id', '')) if pd.notna(row.get('protein_uniprot_id')) else '',
+                        interval=str(row.get('interval', '')) if pd.notna(row.get('interval')) else '',
+                        function=str(row.get('function', '')) if pd.notna(row.get('function')) else '',
+                        modification_type=str(row.get('modification_type', '')) if pd.notna(row.get('modification_type')) else '',
+                        effect=str(row.get('effect', '')) if pd.notna(row.get('effect')) else '',
                         longevity_association=str(row.get('longevity_association', '')) if pd.notna(row.get('longevity_association')) else '',
                         citations=citations,
                         article_url=str(row.get('article_url', '')) if pd.notna(row.get('article_url')) else '',
@@ -115,10 +116,8 @@ class DatabaseService:
                     )
                     
                 except Exception as e:
-                    logger.error(f"Error processing row {row.get('gene_protein_name', 'unknown')}: {str(e)}")
+                    logger.error(f"Error processing row {row.get('gene', 'unknown')}: {str(e)}")
                     continue
-            
-            logger.info(f"Successfully imported data from {csv_path}")
             return True
             
         except Exception as e:
@@ -139,11 +138,12 @@ class DatabaseService:
             for record in sequence_data:
                 data.append({
                     'id': record.id,
-                    'gene_protein_name': record.gene_protein_name,
-                    'protein_sequence': record.protein_sequence,
-                    'dna_sequence': record.dna_sequence,
-                    'intervals': json.dumps(record.intervals) if record.intervals else '',
-                    'modifications': json.dumps(record.modifications) if record.modifications else '',
+                    'gene': record.gene,
+                    'protein_uniprot_id': record.protein_uniprot_id,
+                    'interval': record.interval,
+                    'function': record.function,
+                    'modification_type': record.modification_type,
+                    'effect': record.effect,
                     'longevity_association': record.longevity_association,
                     'citations': json.dumps(record.citations) if record.citations else '',
                     'article_url': record.article_url,
@@ -172,28 +172,20 @@ class DatabaseService:
                 f.write(",".join(CSV_HEADERS) + "\n")
             logger.info(f"Created empty CSV file at {CSV_FILE_PATH}")
         
-        # Check if CSV file has data (more than just headers)
-        try:
-            df = pd.read_csv(CSV_FILE_PATH)
-            csv_has_data = len(df) > 0
-        except:
-            csv_has_data = False
+        df = pd.read_csv(CSV_FILE_PATH)
         
-        if csv_has_data:
-            # Clear existing data from database and reload from CSV
-            async for db_session in get_db():
-                # Clear the table
-                await db_session.execute(delete(SequenceData))
-                await db_session.execute(text("ALTER SEQUENCE sequence_data_id_seq RESTART WITH 1"))
-                await db_session.commit()
-                logger.info("Cleared existing sequence_data table and reset ID sequence")
-                
-                # Load CSV data into database
-                success = await DatabaseService.import_csv_to_database(CSV_FILE_PATH, db_session)
-                if success:
-                    logger.info(f"Successfully loaded CSV data from {CSV_FILE_PATH}")
-                else:
-                    logger.warning(f"Failed to load CSV data from {CSV_FILE_PATH}")
-                break
-        else:
-            logger.info("CSV file is empty, no data to import")
+        # Clear existing data from database and reload from CSV
+        async for db_session in get_db():
+            # Clear the table
+            await db_session.execute(delete(SequenceData))
+            await db_session.execute(text("ALTER SEQUENCE sequence_data_id_seq RESTART WITH 1"))
+            await db_session.commit()
+            logger.info("Cleared existing sequence_data table and reset ID sequence")
+            
+            # Load CSV data into database
+            success = await DatabaseService.import_csv_to_database(CSV_FILE_PATH, db_session)
+            if success:
+                logger.info(f"Successfully loaded CSV data from {CSV_FILE_PATH}")
+            else:
+                logger.warning(f"Failed to load CSV data from {CSV_FILE_PATH}")
+            break

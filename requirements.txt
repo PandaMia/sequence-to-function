@@ -9,3 +9,4 @@ asyncpg
 sqlalchemy[asyncio]
 aiohttp
 pandas
+mygene

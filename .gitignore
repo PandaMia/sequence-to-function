@@ -134,6 +134,8 @@ data/
 
 # Database files
 *.db
+*.db-shm
+*.db-wal
 
 # IDE settings
 .vscode/

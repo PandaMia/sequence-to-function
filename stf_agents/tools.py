@@ -5,18 +5,67 @@ from agents import function_tool
 from sqlalchemy import text
 from configs.database import get_db
 from utils.database_service import DatabaseService
+import mygene
 
 
 logger = logging.getLogger(__name__)
 
 
 @function_tool
+def get_uniprot_id(gene_name: str) -> str:
+    """
+    Get UniProt Swiss-Prot ID for a given gene name using mygene service.
+    
+    Args:
+        gene_name: The gene name to query (e.g., "NFE2L2", "KEAP1", "TP53")
+        
+    Returns:
+        UniProt Swiss-Prot ID as string, or empty string if not found
+    """
+    try:
+        mg = mygene.MyGeneInfo()
+        res = mg.query(gene_name, fields="uniprot")
+        
+        if not res or "hits" not in res or not res["hits"]:
+            return ""
+        
+        # Try to get Swiss-Prot ID from the hits
+        for hit in res["hits"]:
+            if "uniprot" in hit and hit["uniprot"]:
+                uniprot_data = hit["uniprot"]
+                
+                # Check if it's a dict with Swiss-Prot key
+                if isinstance(uniprot_data, dict) and "Swiss-Prot" in uniprot_data:
+                    swiss_prot = uniprot_data["Swiss-Prot"]
+                    if swiss_prot:
+                        # Swiss-Prot can be a string or list
+                        if isinstance(swiss_prot, list):
+                            return swiss_prot[0] if swiss_prot else ""
+                        else:
+                            return str(swiss_prot)
+                
+                # If Swiss-Prot not available, check if uniprot is directly a string
+                elif isinstance(uniprot_data, str):
+                    return uniprot_data
+                
+                # If uniprot is a list, take the first one
+                elif isinstance(uniprot_data, list) and uniprot_data:
+                    return str(uniprot_data[0])
+        
+        return ""
+        
+    except Exception:
+        return ""
+
+
+@function_tool
 async def save_to_database(
-    gene_protein_name: str,
-    protein_sequence: str,
-    dna_sequence: str,
-    intervals: str,
-    modifications: str,
+    gene: str,
+    protein_uniprot_id: str,
+    interval: str,
+    function: str,
+    modification_type: str,
+    effect: str,
     longevity_association: str,
     citations: str,
     article_url: str
@@ -25,11 +74,12 @@ async def save_to_database(
     Save extracted sequence-to-function data to PostgreSQL database.
     
     Args:
-        gene_protein_name: Name or ID of the gene/protein
-        protein_sequence: The protein amino acid sequence
-        dna_sequence: The DNA nucleotide sequence
-        intervals: JSON string of sequence intervals with their functions
-        modifications: JSON string of modifications and their effects
+        gene: Gene name only (e.g., "NFE2L2")
+        protein_uniprot_id: UniProt ID (e.g., "Q16236") 
+        interval: Amino acid position range (e.g., "AA 76–93")
+        function: Description of what happens in that sequence interval
+        modification_type: Type of modification (deletion, substitution, etc.)
+        effect: Functional consequence of the modification
         longevity_association: Description of association with longevity/aging
         citations: JSON string of citation references
         article_url: URL of the source article
@@ -39,13 +89,11 @@ async def save_to_database(
     """
     # Parse JSON strings
     try:
-        intervals_data = json.loads(intervals) if intervals else []
-        modifications_data = json.loads(modifications) if modifications else []
         citations_data = json.loads(citations) if citations else []
     except json.JSONDecodeError as e:
         return f"Error parsing JSON data: {str(e)}"
     
-    logger.info(f"save_to_database called for gene: {gene_protein_name}")
+    logger.info(f"save_to_database called for gene: {gene}")
     
     try:
         # Since this is now an async function, we can directly use async/await
@@ -54,13 +102,14 @@ async def save_to_database(
             # Create extracted_at timestamp
             extracted_at = datetime.now(timezone.utc)
             
-            logger.info(f"Calling DatabaseService.save_sequence_data for {gene_protein_name}")
+            logger.info(f"Calling DatabaseService.save_sequence_data for {gene}")
             sequence_id = await DatabaseService.save_sequence_data(
-                gene_protein_name=gene_protein_name,
-                protein_sequence=protein_sequence,
-                dna_sequence=dna_sequence,
-                intervals=intervals_data,
-                modifications=modifications_data,
+                gene=gene,
+                protein_uniprot_id=protein_uniprot_id,
+                interval=interval,
+                function=function,
+                modification_type=modification_type,
+                effect=effect,
                 longevity_association=longevity_association,
                 citations=citations_data,
                 article_url=article_url,
@@ -70,7 +119,7 @@ async def save_to_database(
             logger.info(f"Database save completed with ID: {sequence_id}")
             return f"Successfully saved sequence-to-function data to PostgreSQL with ID: {sequence_id}"
     except Exception as e:
-        logger.error(f"Database save failed for gene {gene_protein_name}: {str(e)}", exc_info=True)
+        logger.error(f"Database save failed for gene {gene}: {str(e)}", exc_info=True)
         return f"Database save failed: {str(e)}"
 
 

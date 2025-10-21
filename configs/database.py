@@ -14,11 +14,14 @@ class SequenceData(Base):
     __tablename__ = "sequence_data"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    gene_protein_name = Column(String(255), nullable=False, index=True)
-    protein_sequence = Column(Text)
-    dna_sequence = Column(Text)
-    intervals = Column(JSON)  # Array of interval objects
-    modifications = Column(JSON)  # Array of modification objects
+    gene = Column(String(100), nullable=False, index=True)  # Gene name only (e.g., NFE2L2)
+    protein_uniprot_id = Column(String(20), index=True)  # UniProt ID (e.g., Q16236)
+    # Interval information as separate string fields
+    interval = Column(String(100))  # Format: "AA 76–93" (amino acid positions)
+    function = Column(Text)  # Function description
+    # Modification information as separate string fields
+    modification_type = Column(String(100))  # Type of modification (deletion, substitution, etc.)
+    effect = Column(Text)  # Effect of the modification
     longevity_association = Column(Text)
     citations = Column(JSON)  # Array of citation strings
     article_url = Column(Text)
