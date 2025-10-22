@@ -1,7 +1,7 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, text as sql_text
+from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, Boolean, text as sql_text
 from pgvector.sqlalchemy import Vector
 from datetime import datetime, timezone
 from typing import AsyncGenerator
@@ -17,19 +17,15 @@ class SequenceData(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     gene = Column(String(100), nullable=False, index=True)  # Gene name only (e.g., NFE2L2)
     protein_uniprot_id = Column(String(20), index=True)  # UniProt ID (e.g., Q16236)
-    # Interval information as separate string fields
+    modification_type = Column(String(100))  # Type of modification (deletion, substitution, etc.)
     interval = Column(String(100))  # Format: "AA 76–93" (amino acid positions)
     function = Column(Text)  # Function description
-    # Modification information as separate string fields
-    modification_type = Column(String(100))  # Type of modification (deletion, substitution, etc.)
     effect = Column(Text)  # Effect of the modification
-    longevity_association = Column(Text)
+    is_longevity_related = Column(Boolean, default=False, index=True)  # Boolean flag for longevity relation
+    longevity_association = Column(Text)  # Description of aging/longevity relevance
     citations = Column(JSON)  # Array of citation strings
     article_url = Column(Text)
-    extracted_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    # Vector embedding for semantic search (1536 dimensions for OpenAI text-embedding-3-small)
     embedding = Column(Vector(1536))
 
 

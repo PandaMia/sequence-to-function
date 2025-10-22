@@ -64,10 +64,11 @@ def get_uniprot_id(gene_name: str) -> str:
 async def save_to_database(
     gene: str,
     protein_uniprot_id: str,
+    modification_type: str,
     interval: str,
     function: str,
-    modification_type: str,
     effect: str,
+    is_longevity_related: bool,
     longevity_association: str,
     citations: str,
     article_url: str
@@ -78,10 +79,11 @@ async def save_to_database(
     Args:
         gene: Gene name only (e.g., "NFE2L2")
         protein_uniprot_id: UniProt ID (e.g., "Q16236") 
+        modification_type: Type of modification (deletion, substitution, etc.)
         interval: Amino acid position range (e.g., "AA 76–93")
         function: Description of what happens in that sequence interval
-        modification_type: Type of modification (deletion, substitution, etc.)
         effect: Functional consequence of the modification
+        is_longevity_related: Boolean flag indicating if gene is related to longevity/aging
         longevity_association: Description of association with longevity/aging
         citations: JSON string of citation references
         article_url: URL of the source article
@@ -101,21 +103,22 @@ async def save_to_database(
         # Since this is now an async function, we can directly use async/await
         async for db_session in get_db():
             logger.info("Got database session")
-            # Create extracted_at timestamp
-            extracted_at = datetime.now(timezone.utc)
+            # Create created_at timestamp
+            created_at = datetime.now(timezone.utc)
             
             logger.info(f"Calling DatabaseService.save_sequence_data for {gene}")
             sequence_id = await DatabaseService.save_sequence_data(
                 gene=gene,
                 protein_uniprot_id=protein_uniprot_id,
+                modification_type=modification_type,
                 interval=interval,
                 function=function,
-                modification_type=modification_type,
                 effect=effect,
+                is_longevity_related=is_longevity_related,
                 longevity_association=longevity_association,
                 citations=citations_data,
                 article_url=article_url,
-                extracted_at=extracted_at,
+                created_at=created_at,
                 db_session=db_session
             )
             logger.info(f"Database save completed with ID: {sequence_id}")
@@ -218,12 +221,16 @@ async def execute_sql_query(query: str) -> str:
             if not rows:
                 return "No results found for the query"
             
-            # Convert rows to list of dictionaries
+            # Convert rows to list of dictionaries, filtering out embedding field
             columns = result.keys()
             results = []
             for row in rows:
                 row_dict = {}
                 for i, col in enumerate(columns):
+                    # Skip embedding field - it's for internal use only
+                    if col.lower() == 'embedding':
+                        continue
+                        
                     value = row[i]
                     # Handle JSON fields
                     if isinstance(value, (dict, list)):
@@ -338,12 +345,16 @@ async def semantic_search(
                     "results": []
                 })
 
-            # Convert to list of dictionaries
+            # Convert to list of dictionaries, filtering out embedding field
             columns = result.keys()
             results = []
             for row in rows:
                 row_dict = {}
                 for i, col in enumerate(columns):
+                    # Skip embedding field - it's for internal use only
+                    if col.lower() == 'embedding':
+                        continue
+                        
                     value = row[i]
                     if isinstance(value, (dict, list)):
                         row_dict[col] = value
