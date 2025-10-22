@@ -1,6 +1,5 @@
 from agents import Agent
 from agents import RunConfig
-from configs.endpoints_base_models import StfRequest
 import stf_agents.prompts as prompts
 from stf_agents.tools import (
     save_to_database,
@@ -10,7 +9,7 @@ from stf_agents.tools import (
     vision_media,
     semantic_search,
 )
-from .schemas import ParsingOutput
+from stf_agents.schemas import ParsingOutput
 
 
 def create_stf_manager_agent(
@@ -47,10 +46,9 @@ def create_article_parsing_agent(run_config: RunConfig) -> Agent:
         "tools": [
             fetch_article_content,
             get_uniprot_id,
-            vision_media,
             save_to_database,
         ],
-        "handoff_description": "",
+        "handoff_description": "Analyze research articles to extract longevity-related genes and sequence-function relationships.",
         "model": run_config.model,
         "reset_tool_choice": True,
         "output_type": ParsingOutput
@@ -70,7 +68,7 @@ def create_data_retrieval_agent(run_config: RunConfig) -> Agent:
             execute_sql_query,
             semantic_search,
         ],
-        "handoff_description": "",
+        "handoff_description": "Query the sequence-function database using SQL and semantic search. Find genes, proteins, and research data based on user requests.",
         "model": run_config.model,
         "reset_tool_choice": True,
     }
@@ -83,14 +81,14 @@ def create_data_retrieval_agent(run_config: RunConfig) -> Agent:
 
 def create_article_writing_agent(
     run_config: RunConfig,
-    data_retrieval_agent: Agent,
 ) -> Agent:
     agent_kwargs = {
         "name": "Article Writing Agent",
         "instructions": prompts.ARTICLE_WRITING_INSTRUCTIONS,
-        "tools": [],
-        "handoffs": [data_retrieval_agent],
-        "handoff_description": "",
+        "tools": [
+            semantic_search
+        ],
+        "handoff_description": "Generate research articles, summaries, and reports based on sequence-function data stored in the database. Create scientific content about longevity genes and pathways.",
         "model": run_config.model,
         "reset_tool_choice": True,
     }

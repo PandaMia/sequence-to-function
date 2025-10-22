@@ -80,7 +80,7 @@ async def run_stf_agent_stream(
             # Create specialized agents
             article_parsing_agent = create_article_parsing_agent(run_config)
             data_retrieval_agent = create_data_retrieval_agent(run_config)
-            article_writing_agent = create_article_writing_agent(run_config, data_retrieval_agent)
+            article_writing_agent = create_article_writing_agent(run_config)
             vision_agent = create_vision_agent(run_config)
 
             # Create manager agent with handoffs

@@ -22,9 +22,9 @@ class DatabaseService:
     async def save_sequence_data(
         gene: str,
         protein_uniprot_id: str,
+        modification_type: str,
         interval: str,
         function: str,
-        modification_type: str,
         effect: str,
         is_longevity_related: bool,
         longevity_association: str,
@@ -60,9 +60,9 @@ class DatabaseService:
             sequence_data = SequenceData(
                 gene=gene,
                 protein_uniprot_id=protein_uniprot_id,
-                function=function,
-                interval=interval,
                 modification_type=modification_type,
+                interval=interval,
+                function=function,
                 effect=effect,
                 is_longevity_related=is_longevity_related,
                 longevity_association=longevity_association,

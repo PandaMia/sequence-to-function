@@ -11,10 +11,11 @@ class Citation(BaseModel):
 class ParsingOutput(BaseModel):
     gene: str
     protein_uniprot_id: str
+    modification_type: str # e.g., "deletion", "substitution"
     interval: str
     function: str
-    modification_type: str # e.g., "deletion", "substitution"
     effect: str # effect of the modification
+    is_longevity_related: bool
     longevity_association: str
     citations: List[Citation] = []
     article_url: str
