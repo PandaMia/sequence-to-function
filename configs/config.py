@@ -10,7 +10,7 @@ class TaskModelConfig(TypedDict):
 
 
 DEFAULT_STF_MODEL_SETTINGS: dict[str, TaskModelConfig] = {
-    "model_name": "gpt-5-nano",
+    "model_name": "gpt-5",
     "model_settings": ModelSettings(
         reasoning=Reasoning(effort="low", summary="auto"),
         verbosity="low",

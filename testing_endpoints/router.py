@@ -6,7 +6,7 @@ from typing import Callable
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from configs.database import get_db   
-from configs.endpoints_base_models import AppState
+from configs.endpoints_base_models import AppState, SQLQueryRequest
 
 
 def get_testing_router(app_state_getter: Callable[[], AppState]) -> APIRouter:
@@ -67,6 +67,61 @@ def get_testing_router(app_state_getter: Callable[[], AppState]) -> APIRouter:
             return {
                 "status": "error",
                 "message": f"Failed to delete table: {str(e)}"
+            }
+
+    @router.post("/execute-sql")
+    async def execute_sql_query(request: SQLQueryRequest, app_state: AppState = Depends(app_state_getter)):
+        """
+        Execute a provided SQL query in the database
+        
+        Args:
+            request: SQLQueryRequest containing the SQL query to execute
+            
+        Returns:
+            Result of SQL query execution
+        """
+        try:
+            async for db_session in get_db():
+                result = await db_session.execute(text(request.query))
+                
+                # Handle different types of queries
+                if result.returns_rows:
+                    # SELECT queries - fetch results
+                    rows = result.fetchall()
+                    columns = list(result.keys()) if rows else []
+                    
+                    # Convert rows to list of dictionaries
+                    data = []
+                    for row in rows:
+                        row_dict = {}
+                        for i, column in enumerate(columns):
+                            row_dict[column] = row[i]
+                        data.append(row_dict)
+                    
+                    return {
+                        "status": "success",
+                        "query": request.query,
+                        "columns": columns,
+                        "data": data,
+                        "row_count": len(data)
+                    }
+                else:
+                    # INSERT, UPDATE, DELETE, etc. - commit changes
+                    await db_session.commit()
+                    affected_rows = result.rowcount
+                    
+                    return {
+                        "status": "success",
+                        "query": request.query,
+                        "affected_rows": affected_rows,
+                        "message": f"Query executed successfully. {affected_rows} rows affected."
+                    }
+                    
+        except Exception as e:
+            return {
+                "status": "error",
+                "query": request.query,
+                "message": f"Failed to execute query: {str(e)}"
             }
 
     return router

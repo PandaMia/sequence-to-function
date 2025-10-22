@@ -28,7 +28,7 @@ async def run_stf_agent_stream(
     app_state: AppState,
     session_id: str
 ) -> AsyncGenerator[str, None]:
-    session_id = session_id or f"session_{uuid.uuid4().hex}"
+    session_id = f"session_{uuid.uuid4().hex}"
     event_queue: asyncio.Queue = asyncio.Queue()
     
     yield json_event("start", {"status": "started", "session_id": session_id})
