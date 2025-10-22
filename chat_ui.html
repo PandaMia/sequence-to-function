@@ -116,6 +116,9 @@
             background: rgba(0, 30, 0, 0.7);
             color: #00ff00;
             border-color: #006600;
+            /* Proper text wrapping */
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         .input-container {
@@ -208,6 +211,13 @@
             margin: 0.25rem 0;
             border-left: 3px solid #00ff00;
             font-size: 0.9rem;
+        }
+
+        .status-message {
+            background: rgba(0, 30, 0, 0.4);
+            border-left: 3px solid #88ff88;
+            color: #88ff88;
+            font-style: italic;
         }
 
         strong {
@@ -340,16 +350,11 @@
             padding: 0.5rem 0.75rem;
             border: 1px solid #004400;
             color: #00ff00;
-            white-space: nowrap;
-            max-width: 300px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .bot-message td:hover {
             white-space: normal;
-            overflow: visible;
-            max-width: none;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-width: 300px;
+            line-height: 1.4;
         }
 
         .bot-message tr:nth-child(even) {
@@ -367,8 +372,23 @@
             padding: 0.5rem;
             margin: 0.5rem 0;
             font-size: 0.9rem;
-            white-space: pre-wrap;
             font-family: 'Courier Prime', monospace;
+        }
+
+        /* Hide tool output when final response arrives */
+        .tool-output.hidden {
+            display: none;
+        }
+
+        /* Style for final response section */
+        .final-response {
+            background: rgba(0, 30, 0, 0.9);
+            border: 1px solid #00ff00;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         .tool-call {
@@ -378,6 +398,9 @@
             margin: 0.5rem 0;
             font-size: 0.85rem;
             color: #88ff88;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
     </style>
 </head>
@@ -702,7 +725,14 @@
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
 
-                this.currentStreamDiv = this.addMessage('PROCESSING DATA STREAM...');
+                // Create an empty message container to append stream content to
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message bot-message';
+                messageDiv.innerHTML = '<strong>SYSTEM:</strong><br>';
+                this.messagesContainer.appendChild(messageDiv);
+                this.currentStreamDiv = messageDiv;
+                this.scrollToBottom();
+
                 let buffer = '';
                 let currentEvent = null;
 
@@ -743,8 +773,8 @@
                 if (event.type === 'final_response') {
                     // Check if content is a ParsingOutput structure (has summary and genes)
                     if (event.content && typeof event.content === 'object' && 'summary' in event.content && 'genes' in event.content) {
-                        // Render ParsingOutput with summary and genes table
-                        let html = '<strong>SYSTEM:</strong><br>';
+                        // For ParsingOutput: keep the table from tool output visible, only add summary
+                        let html = '<div class="final-response">';
 
                         // Render summary section
                         if (event.content.summary) {
@@ -752,19 +782,42 @@
                             html += DOMPurify.sanitize(summaryHtml);
                         }
 
-                        // Render genes as a table
-                        if (event.content.genes && Array.isArray(event.content.genes) && event.content.genes.length > 0) {
-                            html += '<h2>Genes</h2>';
-                            html += this.jsonToTable(event.content.genes);
-                        } else if (event.content.genes && Array.isArray(event.content.genes) && event.content.genes.length === 0) {
-                            html += '<p style="margin-top: 1rem;"><em>No genes found in this article.</em></p>';
+                        // Check if we already have a table from tool output
+                        const existingTable = this.currentStreamDiv.querySelector('.tool-output .table-container');
+
+                        if (!existingTable) {
+                            // No table from tool output, render genes as a table
+                            if (event.content.genes && Array.isArray(event.content.genes) && event.content.genes.length > 0) {
+                                html += '<h2>Genes</h2>';
+                                html += this.jsonToTable(event.content.genes);
+                            } else if (event.content.genes && Array.isArray(event.content.genes) && event.content.genes.length === 0) {
+                                html += '<p style="margin-top: 1rem;"><em>No genes found in this article.</em></p>';
+                            }
+                        } else {
+                            // Table already exists from tool output, just add a reference
+                            html += '<p style="margin-top: 1rem;"><em>Done.</em></p>';
                         }
 
-                        this.currentStreamDiv.innerHTML = html;
+                        html += '</div>';
+                        // Append to existing content instead of replacing
+                        this.appendHtmlToStream(html);
                     } else {
-                        // Render final response with markdown and table support
-                        const renderedContent = this.renderMarkdown(event.content);
-                        this.currentStreamDiv.innerHTML = `<strong>SYSTEM:</strong><br>${renderedContent}`;
+                        // For other responses: check if they contain table data that might duplicate tool output
+                        const contentStr = typeof event.content === 'string' ? event.content : JSON.stringify(event.content);
+
+                        // Check if this is just echoing the tool output data
+                        const existingToolOutput = this.currentStreamDiv.querySelector('.tool-output');
+                        const hasTable = this.tryRenderTable(contentStr);
+
+                        if (existingToolOutput && hasTable) {
+                            // We already have the data displayed in tool output, skip duplicate
+                            const html = '<div class="final-response"><p><em>Done.</em></p></div>';
+                            this.appendHtmlToStream(html);
+                        } else {
+                            // Render final response with markdown and table support
+                            const renderedContent = this.renderMarkdown(event.content);
+                            this.appendHtmlToStream(`<div class="final-response">${renderedContent}</div>`);
+                        }
                     }
                 } else if (event.type === 'tool_call') {
                     // Show tool calls for transparency
@@ -783,8 +836,16 @@
                 } else if (event.type === 'error') {
                     this.appendToCurrentStream(`ERROR: ${event.message}`, 'error');
                 } else if (event.type === 'status') {
-                    // Show status updates but don't accumulate them
-                    this.currentStreamDiv.innerHTML = `<strong>SYSTEM:</strong> <em>${this.escapeHtml(event.message)}</em>`;
+                    // Remove any previous status message and show new one
+                    const existingStatus = this.currentStreamDiv.querySelector('.status-message');
+                    if (existingStatus) {
+                        existingStatus.remove();
+                    }
+                    const statusDiv = document.createElement('div');
+                    statusDiv.className = 'stream-message status-message';
+                    statusDiv.innerHTML = `<em>${this.escapeHtml(event.message)}</em>`;
+                    this.currentStreamDiv.appendChild(statusDiv);
+                    this.scrollToBottom();
                 }
                 // Ignore other event types for cleaner UI
             }
