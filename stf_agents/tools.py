@@ -1,19 +1,22 @@
-import base64
+import os
+import re
 import json
+import base64
 import logging
 from datetime import datetime, timezone
-import os
+from typing import List, Optional, Tuple
+import requests
 import urllib
+from bs4 import BeautifulSoup
+from openai import OpenAI
 from agents import function_tool
 from sqlalchemy import text
+import mygene
 from configs.database import get_db
 from utils.database_service import DatabaseService
 from utils.app_context import get_embedding_service
 from stf_agents.schemas import ArticleContext, MediaNote
-import mygene
-from typing import List, Optional, Tuple
-import requests
-from openai import OpenAI
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -145,10 +148,6 @@ def fetch_article_content(url: str, user_request: str) -> ArticleContext:
         ArticleContext object with extracted text and image URLs
     """
     try:
-        import requests
-        import re
-        from bs4 import BeautifulSoup
-
         def _abs(base: str, url: str) -> Optional[str]:
             if not url:
                 return None
