@@ -8,7 +8,7 @@ class Citation(BaseModel):
     doi: Optional[str] = None
     url: Optional[str] = None
 
-class ParsingOutput(BaseModel):
+class ParsingGene(BaseModel):
     gene: str
     protein_uniprot_id: str
     modification_type: str # e.g., "deletion", "substitution"
@@ -19,6 +19,10 @@ class ParsingOutput(BaseModel):
     longevity_association: str
     citations: List[Citation] = []
     article_url: str
+
+class ParsingOutput(BaseModel):
+    summary: str # answer to the question in accordance with the information found/brief description of the article
+    genes: List[ParsingGene] = []
 
 class ArticleContext(BaseModel):
     article_url: Optional[str] = None
