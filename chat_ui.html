@@ -243,7 +243,12 @@
         }
 
         .bot-message h1 { font-size: 1.5rem; border-bottom: 1px solid #00ff00; padding-bottom: 0.25rem; }
-        .bot-message h2 { font-size: 1.3rem; }
+        .bot-message h2 {
+            font-size: 1.3rem;
+            border-bottom: 1px solid #004400;
+            padding-bottom: 0.25rem;
+            margin-top: 1.5rem;
+        }
         .bot-message h3 { font-size: 1.1rem; }
 
         .bot-message p {
@@ -504,6 +509,11 @@
             }
 
             renderMarkdown(content) {
+                // If content is an object, convert to JSON string first
+                if (typeof content === 'object' && content !== null) {
+                    content = JSON.stringify(content, null, 2);
+                }
+
                 // First, try to detect and render JSON tables
                 const tableContent = this.tryRenderTable(content);
                 if (tableContent) {
@@ -731,9 +741,31 @@
 
             handleStreamEvent(event) {
                 if (event.type === 'final_response') {
-                    // Render final response with markdown and table support
-                    const renderedContent = this.renderMarkdown(event.content);
-                    this.currentStreamDiv.innerHTML = `<strong>SYSTEM:</strong><br>${renderedContent}`;
+                    // Check if content is a ParsingOutput structure (has summary and genes)
+                    if (event.content && typeof event.content === 'object' && 'summary' in event.content && 'genes' in event.content) {
+                        // Render ParsingOutput with summary and genes table
+                        let html = '<strong>SYSTEM:</strong><br>';
+
+                        // Render summary section
+                        if (event.content.summary) {
+                            const summaryHtml = marked.parse('## Summary\n\n' + event.content.summary);
+                            html += DOMPurify.sanitize(summaryHtml);
+                        }
+
+                        // Render genes as a table
+                        if (event.content.genes && Array.isArray(event.content.genes) && event.content.genes.length > 0) {
+                            html += '<h2>Genes</h2>';
+                            html += this.jsonToTable(event.content.genes);
+                        } else if (event.content.genes && Array.isArray(event.content.genes) && event.content.genes.length === 0) {
+                            html += '<p style="margin-top: 1rem;"><em>No genes found in this article.</em></p>';
+                        }
+
+                        this.currentStreamDiv.innerHTML = html;
+                    } else {
+                        // Render final response with markdown and table support
+                        const renderedContent = this.renderMarkdown(event.content);
+                        this.currentStreamDiv.innerHTML = `<strong>SYSTEM:</strong><br>${renderedContent}`;
+                    }
                 } else if (event.type === 'tool_call') {
                     // Show tool calls for transparency
                     const toolName = event.tool || 'unknown';

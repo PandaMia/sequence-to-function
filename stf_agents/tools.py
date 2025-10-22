@@ -292,22 +292,53 @@ def _download_b64(url: str) -> str:
     return "data:image/*;base64," + base64.b64encode(resp.content).decode("utf-8")
 
 
-def _download_pdf_bytes(url: str) -> Tuple[bytes, str]:
-    """Download a PDF from URL and return bytes and content-type. Raises exception on failure."""
+def _download_pdf_b64(url: str) -> Tuple[str, str, str]:
+    """
+    Download a PDF and return (base64_string, content_type, filename).
+    Tries direct download and with ?download=1 parameter, validates PDF signature.
+    """
+    from urllib.parse import urlparse, urlunparse, urlencode, parse_qs
+
+    session = requests.Session()
+
+    def is_pdf_bytes(b: bytes) -> bool:
+        head = b[:4096].lstrip(b"\xef\xbb\xbf\r\n\t \x00")
+        return head.startswith(b"%PDF")
+
     headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/pdf,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.8",
     }
-    resp = requests.get(url, headers=headers, timeout=60)
-    resp.raise_for_status()
 
-    ct = resp.headers.get("content-type", "").lower()
-    if not (ct.startswith("application/pdf") or ct.startswith("application/octet-stream")):
-        if not resp.content.startswith(b"%PDF"):
-            raise ValueError(f"URL did not return a PDF (content-type: {ct})")
-        ct = "application/pdf"
+    def get(u: str):
+        r = session.get(u, headers=headers, timeout=60, allow_redirects=True)
+        r.raise_for_status()
+        ct = (r.headers.get("content-type") or "").lower()
+        return r, ct
 
-    return resp.content, ct
+    # 1) Direct attempt
+    resp, ct = get(url)
+    if (ct.startswith("application/pdf") or ct.startswith("application/octet-stream")) and is_pdf_bytes(resp.content):
+        b64 = base64.b64encode(resp.content).decode("ascii")
+        filename = (url.split("?")[0].split("/")[-1] or "document.pdf")
+        return b64, "application/pdf", filename
+
+    # 2) Try with ?download=1 (often helps with PMC/CDN)
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query, keep_blank_values=True)
+    qs["download"] = ["1"]
+    new_query = urlencode({k: v[0] if len(v) == 1 else v for k, v in qs.items()}, doseq=True)
+    url_dl = urlunparse(parsed._replace(query=new_query))
+
+    if url_dl != url:
+        resp2, ct2 = get(url_dl)
+        if (ct2.startswith("application/pdf") or ct2.startswith("application/octet-stream")) and is_pdf_bytes(resp2.content):
+            b64 = base64.b64encode(resp2.content).decode("ascii")
+            filename = (url.split("?")[0].split("/")[-1] or "document.pdf")
+            return b64, "application/pdf", filename
+
+    # If we got here - it's not a PDF
+    raise ValueError(f"URL did not return a PDF (content-type: {ct or 'unknown'})")
 
 @function_tool
 def vision_media(
@@ -343,6 +374,9 @@ def vision_media(
             logger.warning("⚠️ vision_media: No media to analyze (empty lists)")
             return []
 
+        # Initialize OpenAI client early
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
         sys_prompt = """
             You are a scientific figure analyst.
             For each provided image/pdf:
@@ -376,16 +410,20 @@ def vision_media(
                         "Failed to download image from URL: %s, error: %s", url, str(e)
                     )
 
-        # Process PDF URLs (pass directly without downloading)
+        # Process PDF URLs using ResponseInputFileParam structure with base64
         if pdf_urls:
             for url in pdf_urls:
                 try:
+                    b64_data, content_type, filename = _download_pdf_b64(url)
+                    # Ensure all values are strings, not bytes
+                    file_data_str = f"data:{content_type};base64,{b64_data}"
                     parts.append({
-                        "type": "input_image",
-                        "image_url": _download_pdf_bytes(url),  # PDF URL passed directly
+                        "type": "input_file",
+                        "file_data": file_data_str,
+                        "filename": str(filename),
                     })
                     successful_pdfs += 1
-                    logger.info(f"Successfully added PDF: {url}")
+                    logger.info(f"Successfully added PDF: {url} ({filename})")
                 except Exception as e:
                     logger.error(
                         "Failed to add PDF from URL: %s, error: %s", url, str(e)
@@ -397,7 +435,15 @@ def vision_media(
             return []
 
         logger.info(f"Analyzing {successful_images} images and {successful_pdfs} PDFs with vision API")
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        # Debug: log the structure of parts to identify any bytes objects
+        for i, part in enumerate(parts):
+            part_type = part.get("type", "unknown")
+            if part_type == "input_file":
+                logger.debug(f"Part {i}: type={part_type}, filename={part.get('filename')}, file_data_len={len(part.get('file_data', ''))}")
+            else:
+                logger.debug(f"Part {i}: type={part_type}")
+
         notes: List[MediaNote] = []
 
         resp = client.responses.create(
@@ -419,7 +465,7 @@ def vision_media(
                                     "type":"object",
                                     "properties":{
                                         "url":{"type":"string"},
-                                        "kind":{"type":"string","enum":["image"]},
+                                        "kind":{"type":"string","enum":["image","pdf"]},
                                         "description":{"type":"string"},
                                         "relevance":{"type":"boolean"},
                                         "relevance_score":{"type":"number"}
@@ -441,7 +487,8 @@ def vision_media(
         items = data.get("notes", [])
         for it in items:
             notes.append(MediaNote(
-                url=it["url"], kind="image",
+                url=it["url"],
+                kind=it["kind"],
                 description=it["description"],
                 relevance=it["relevance"],
                 relevance_score=float(it["relevance_score"])

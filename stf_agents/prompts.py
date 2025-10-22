@@ -120,7 +120,7 @@ Extract comprehensive knowledge about protein/gene modifications and their funct
 ## OUTPUT FORMAT - ONE ROW PER GENE
 
 - Return a JSON object that matches EXACTLY the `ParsingOutput` schema.
-- If an item is unknown, set it to null or an empty array.
+- If an item in `ParsingGene` is unknown, set it to null or an empty array.
 
 **CRITICAL**: Create separate database entries for each gene mentioned in the article. Call save_to_database multiple times as needed.
 
@@ -160,18 +160,22 @@ For each gene, use the save_to_database tool with these parameters:
 
 ### EXAMPLE OF OUTPUT SHAPE:
    {
-     "gene": "NRF2",
-     "protein_uniprot_id": "Q16236",
-     "modification_type": "deletion",
-     "interval": "AA 76–93",
-     "function": "Binds to antioxidant response elements to activate transcription of cytoprotective genes",
-     "effect": "loss of DNA binding activity",
-     is_longevity_related: true,
-     "longevity_association": "Increased activity correlates with extended lifespan in model X",
-     "citations": [{"raw": "Smith et al., Nature 2022"}],
-     "article_url": "https://..."
+      "genes": [
+         {
+            "gene": "NRF2",
+            "protein_uniprot_id": "Q16236",
+            "modification_type": "deletion",
+            "interval": "AA 76–93",
+            "function": "Binds to antioxidant response elements to activate transcription of cytoprotective genes",
+            "effect": "loss of DNA binding activity",
+            is_longevity_related: true,
+            "longevity_association": "Increased activity correlates with extended lifespan in model X",
+            "citations": [{"raw": "Smith et al., Nature 2022"}],
+            "article_url": "https://..."
+         }
+      ],
+      "summary": "NFE2L2 (NRF2) is a key transcription factor regulating antioxidant defenses. Deletion of AA 76–93 impairs DNA binding, reducing cytoprotective gene activation. Enhanced NRF2 activity is linked to increased lifespan in model X."
    }
-
 
 ## PERSISTENCE STEP
    - After you produce a valid `ParsingOutput`, you MAY call `save_to_database(...)` once,
@@ -341,11 +345,11 @@ That's it. No explanations, no "I will...", just do it.
 - The tool returns a list of MediaNote objects with relevance scores and descriptions
 
 # After Tool Returns:
-Report findings concisely:
+Report findings concisely. Display ONLY the description for each item:
 ```
 Analyzed N items:
-- Item 1 (score: X.XX): Description
-- Item 2 (score: X.XX): Description
+- Description of item 1
+- Description of item 2
 
 Key findings: [Brief summary of important discoveries]
 ```
@@ -355,8 +359,8 @@ Key findings: [Brief summary of important discoveries]
 **User:** "Analyze this PDF: https://pmc.ncbi.nlm.nih.gov/articles/PMC7234996/pdf/file.pdf"
 **You:** [Call vision_media(image_urls=[], pdf_urls=["https://pmc.ncbi.nlm.nih.gov/articles/PMC7234996/pdf/file.pdf"], hint=None)]
 **You:** "Analyzed 1 PDF. Found:
-- Figure 1 (score: 0.85): Western blot showing KEAP1 ubiquitination patterns
-- Figure 2 (score: 0.92): Sequence alignment of KEAP1 variants showing conservation
+- Western blot showing KEAP1 ubiquitination patterns
+- Sequence alignment of KEAP1 variants showing conservation
 
 Key findings: KEAP1 shows ubiquitination changes with specific variants."
 
