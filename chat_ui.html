@@ -555,6 +555,23 @@
                     if (Array.isArray(parsed) && parsed.length > 0) {
                         return this.jsonToTable(parsed);
                     } else if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                        // Check if it's wrapped in a "message" field
+                        if ('message' in parsed && Object.keys(parsed).length === 1) {
+                            const msgContent = parsed.message;
+                            // Try to parse the message field
+                            if (typeof msgContent === 'string') {
+                                try {
+                                    const msgParsed = JSON.parse(msgContent);
+                                    if (Array.isArray(msgParsed) && msgParsed.length > 0) {
+                                        return this.jsonToTable(msgParsed);
+                                    } else if (typeof msgParsed === 'object' && msgParsed !== null) {
+                                        return this.jsonToTable([msgParsed]);
+                                    }
+                                } catch (e) {
+                                    // Not JSON inside message
+                                }
+                            }
+                        }
                         // Single object - convert to array with one item
                         return this.jsonToTable([parsed]);
                     }
@@ -674,20 +691,27 @@
                     const parsed = typeof content === 'string' ? JSON.parse(content) : content;
 
                     // Agent transfer outputs typically have just a "message" field with descriptive text
-                    // or are arrays with gene data that will be formatted in the final response
-                    if (parsed && typeof parsed === 'object') {
-                        // Single object with only "message" field = agent transfer
+                    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                        // Single object with only "message" field
                         if ('message' in parsed && Object.keys(parsed).length === 1) {
-                            return true;
-                        }
+                            const msgContent = parsed.message;
 
-                        // Array of objects with gene/protein data = likely intermediate data
-                        // that will be formatted properly in final response
-                        if (Array.isArray(parsed) && parsed.length > 0) {
-                            const firstItem = parsed[0];
-                            if (firstItem && typeof firstItem === 'object' &&
-                                ('gene' in firstItem || 'protein_uniprot_id' in firstItem)) {
-                                // This is gene data that will be shown in final response
+                            // Check if the message field contains actual data (array/object)
+                            if (typeof msgContent === 'string') {
+                                try {
+                                    const msgParsed = JSON.parse(msgContent);
+                                    // If message contains an array or object, it's NOT just routing
+                                    if (Array.isArray(msgParsed) || typeof msgParsed === 'object') {
+                                        return false; // This is actual data, not a routing message
+                                    }
+                                } catch (e) {
+                                    // String message that's not JSON
+                                }
+                            }
+
+                            // If message is a string description (not data), it's a routing message
+                            if (typeof msgContent === 'string' && msgContent.length > 0 &&
+                                !msgContent.startsWith('[') && !msgContent.startsWith('{')) {
                                 return true;
                             }
                         }
