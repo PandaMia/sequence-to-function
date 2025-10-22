@@ -9,7 +9,7 @@ import requests
 import urllib
 from bs4 import BeautifulSoup
 from openai import OpenAI
-from agents import function_tool
+from agents import function_tool, WebSearchTool
 from sqlalchemy import text
 import mygene
 from configs.database import get_db
@@ -23,6 +23,9 @@ load_dotenv()
 
 
 logger = logging.getLogger(__name__)
+
+
+web_search_tool = WebSearchTool()
 
 
 @function_tool
@@ -137,12 +140,11 @@ async def save_to_database(
 
 
 @function_tool
-def fetch_article_content(url: str, user_request: str) -> ArticleContext:
+def fetch_article_content(url: str) -> ArticleContext:
     """
     Fetch and extract content from a research article URL including text, images, and PDFs.
     Args:
         url: URL of the article to fetch
-        user_request: Original user request for context in parsing
 
     Returns:
         ArticleContext object with extracted text and image URLs

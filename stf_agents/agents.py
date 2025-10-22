@@ -4,6 +4,7 @@ import stf_agents.prompts as prompts
 from stf_agents.tools import (
     save_to_database,
     fetch_article_content,
+    web_search_tool,
     execute_sql_query,
     get_uniprot_id,
     vision_media,
@@ -45,6 +46,7 @@ def create_article_parsing_agent(run_config: RunConfig) -> Agent:
         "instructions": prompts.ARTICLE_PARSING_INSTRUCTIONS,
         "tools": [
             fetch_article_content,
+            web_search_tool,
             get_uniprot_id,
             save_to_database,
         ],
