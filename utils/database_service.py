@@ -26,10 +26,11 @@ class DatabaseService:
         function: str,
         modification_type: str,
         effect: str,
+        is_longevity_related: bool,
         longevity_association: str,
         citations: list,
         article_url: str,
-        extracted_at: datetime,
+        created_at: datetime,
         db_session: AsyncSession,
         export_to_csv: bool = True
     ) -> int:
@@ -59,15 +60,15 @@ class DatabaseService:
             sequence_data = SequenceData(
                 gene=gene,
                 protein_uniprot_id=protein_uniprot_id,
-                interval=interval,
                 function=function,
+                interval=interval,
                 modification_type=modification_type,
                 effect=effect,
+                is_longevity_related=is_longevity_related,
                 longevity_association=longevity_association,
                 citations=citations,
                 article_url=article_url,
-                extracted_at=extracted_at,
-                created_at=datetime.now(timezone.utc),
+                created_at=created_at,
                 embedding=embedding
             )
 
@@ -119,22 +120,19 @@ class DatabaseService:
             logger.info(f"Loading {len(df)} records from {csv_path}")
             
             for _, row in df.iterrows():
-                try:
-                    citations = json.loads(row['citations']) if pd.notna(row['citations']) and row['citations'] else []
-                    
-                    extracted_at = datetime.fromisoformat(row['extracted_at']) if pd.notna(row['extracted_at']) and row['extracted_at'] else None
-                    
+                try:                    
                     await DatabaseService.save_sequence_data(
                         gene=str(row['gene']) if pd.notna(row['gene']) else '',
                         protein_uniprot_id=str(row.get('protein_uniprot_id', '')) if pd.notna(row.get('protein_uniprot_id')) else '',
+                        modification_type=str(row.get('modification_type', '')) if pd.notna(row.get('modification_type')) else '',
                         interval=str(row.get('interval', '')) if pd.notna(row.get('interval')) else '',
                         function=str(row.get('function', '')) if pd.notna(row.get('function')) else '',
-                        modification_type=str(row.get('modification_type', '')) if pd.notna(row.get('modification_type')) else '',
                         effect=str(row.get('effect', '')) if pd.notna(row.get('effect')) else '',
+                        is_longevity_related=bool(row.get('is_longevity_related', False)) if pd.notna(row.get('is_longevity_related')) else False,
                         longevity_association=str(row.get('longevity_association', '')) if pd.notna(row.get('longevity_association')) else '',
-                        citations=citations,
+                        citations=json.loads(row['citations']) if pd.notna(row['citations']) and row['citations'] else [],
                         article_url=str(row.get('article_url', '')) if pd.notna(row.get('article_url')) else '',
-                        extracted_at=extracted_at,
+                        created_at=datetime.fromisoformat(row['created_at']) if pd.notna(row['created_at']) and row['created_at'] else None,
                         db_session=db_session,
                         export_to_csv=False  # Don't export to CSV when importing from CSV
                     )
@@ -164,16 +162,15 @@ class DatabaseService:
                     'id': record.id,
                     'gene': record.gene,
                     'protein_uniprot_id': record.protein_uniprot_id,
+                    'modification_type': record.modification_type,
                     'interval': record.interval,
                     'function': record.function,
-                    'modification_type': record.modification_type,
                     'effect': record.effect,
+                    'is_longevity_related': record.is_longevity_related,
                     'longevity_association': record.longevity_association,
                     'citations': json.dumps(record.citations) if record.citations else '',
                     'article_url': record.article_url,
-                    'extracted_at': record.extracted_at.isoformat() if record.extracted_at else '',
-                    'created_at': record.created_at.isoformat(),
-                    'updated_at': record.updated_at.isoformat()
+                    'created_at': record.created_at.isoformat() if record.created_at else '',
                 })
             
             df = pd.DataFrame(data)
@@ -251,8 +248,6 @@ class DatabaseService:
         Args:
             db_session: AsyncSession - database session to use
         """
-        from utils.app_context import get_embedding_service
-
         embedding_service = get_embedding_service()
         if not embedding_service:
             logger.error("Embedding service not available")

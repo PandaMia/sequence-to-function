@@ -94,6 +94,9 @@
             max-width: 90%;
             background: rgba(0, 20, 0, 0.7);
             animation: messageAppear 0.5s ease-in;
+            /* Ensure message content doesn't overflow */
+            overflow: hidden;
+            word-wrap: break-word;
         }
 
         @keyframes messageAppear {
@@ -278,14 +281,42 @@
             color: #88ff88;
         }
 
+        /* Table container with horizontal scroll */
+        .table-container {
+            width: 100%;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: visible;
+            margin: 1rem 0;
+            border: 2px solid #00ff00;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            background: rgba(0, 20, 0, 0.9);
+            /* Force container to respect parent boundaries */
+            box-sizing: border-box;
+        }
+
+        .table-container::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .table-container::-webkit-scrollbar-track {
+            background: #001100;
+        }
+
+        .table-container::-webkit-scrollbar-thumb {
+            background: #00ff00;
+            border-radius: 4px;
+        }
+
         /* Table styles */
         .bot-message table {
             border-collapse: collapse;
-            width: 100%;
-            margin: 1rem 0;
+            width: max-content;
+            min-width: 100%;
+            margin: 0;
             background: rgba(0, 20, 0, 0.9);
-            border: 2px solid #00ff00;
-            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            border: none;
+            table-layout: auto;
         }
 
         .bot-message th {
@@ -304,6 +335,16 @@
             padding: 0.5rem 0.75rem;
             border: 1px solid #004400;
             color: #00ff00;
+            white-space: nowrap;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .bot-message td:hover {
+            white-space: normal;
+            overflow: visible;
+            max-width: none;
         }
 
         .bot-message tr:nth-child(even) {
@@ -614,19 +655,19 @@
                 });
                 const keys = Array.from(allKeys);
 
-                let html = '<table>';
+                let tableHtml = '<table>';
 
                 // Table header
-                html += '<thead><tr>';
+                tableHtml += '<thead><tr>';
                 keys.forEach(key => {
-                    html += `<th>${this.escapeHtml(key)}</th>`;
+                    tableHtml += `<th>${this.escapeHtml(key)}</th>`;
                 });
-                html += '</tr></thead>';
+                tableHtml += '</tr></thead>';
 
                 // Table body
-                html += '<tbody>';
+                tableHtml += '<tbody>';
                 jsonArray.forEach(row => {
-                    html += '<tr>';
+                    tableHtml += '<tr>';
                     keys.forEach(key => {
                         const value = row[key];
                         let cellContent;
@@ -639,13 +680,16 @@
                             cellContent = this.escapeHtml(String(value));
                         }
 
-                        html += `<td>${cellContent}</td>`;
+                        tableHtml += `<td>${cellContent}</td>`;
                     });
-                    html += '</tr>';
+                    tableHtml += '</tr>';
                 });
-                html += '</tbody>';
+                tableHtml += '</tbody>';
 
-                html += '</table>';
+                tableHtml += '</table>';
+
+                // Wrap table in scrollable container
+                let html = `<div class="table-container">${tableHtml}</div>`;
 
                 // Add row count only for multiple rows
                 if (jsonArray.length > 1) {

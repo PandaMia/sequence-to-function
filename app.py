@@ -4,9 +4,14 @@ from fastapi.responses import StreamingResponse, FileResponse
 from utils.start_up import lifespan_start_up
 from configs.endpoints_base_models import AppState, StfRequest
 from manager import run_stf_agent_stream
+from testing_endpoints.router import get_testing_router
 
 
 app = FastAPI(lifespan=lifespan_start_up)
+
+# Add testing router
+testing_router = get_testing_router(lambda: cast(AppState, app.state))
+app.include_router(testing_router)
 
 
 @app.get("/")

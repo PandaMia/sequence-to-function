@@ -111,10 +111,13 @@ Extract comprehensive knowledge about protein/gene modifications and their funct
    - Small molecule interactions (bonus)
 
 6. **Data Structure Requirements (STRICT)**:
-   - Interval should be formatted as: "AA 76–93" (amino acid positions from 76 to 93)
-   - Function should describe what happens in that sequence interval
-   - Modification_type should specify the type of change (deletion, substitution, insertion, etc.)
-   - Effect should describe the functional consequence of the modification
+   - **modification_type**: Specify the type of change (deletion, substitution, insertion, etc.) - use empty string if no specific modification is described
+   - If **modification_type** is empty → **interval**, **function**, and **effect** MUST also be empty strings
+   - If **modification_type** has a value → **interval** should be in exact format "AA X–Y" (if positions are mentioned) or empty string
+   - **interval** format is STRICT: "AA " + start position + "–" + end position (use en-dash –, not hyphen -). For example: "AA 76–93" (amino acid positions from 76 to 93)
+   - Only use intervals that are explicitly mentioned in the article with specific amino acid positions
+   - **function**: Describe what happens in that sequence interval - use empty string if modification_type is empty
+   - **effect**: Describe the functional consequence of the modification - use empty string if modification_type is empty
    - All claims should be supported by evidence from the article
 
 ## OUTPUT FORMAT - ONE ROW PER GENE
@@ -128,10 +131,11 @@ For each gene, use the save_to_database tool with these parameters:
 
 - **gene**: Clean gene name only (e.g., "NFE2L2", "KEAP1")
 - **protein_uniprot_id**: UniProt ID obtained from get_uniprot_id tool
-- **interval**: Amino acid position range in format "AA 76–93" (empty string if not applicable)
-- **function**: Description of what happens in that sequence interval (or general protein function)
-- **modification_type**: Type of modification (deletion, substitution, insertion, etc., empty if not applicable)
-- **effect**: Functional consequence of the modification (or general protein effect)
+- **modification_type**: Type of modification (deletion, substitution, insertion, etc.) - empty string if no modification described
+- **interval**: Amino acid position range in EXACT format "AA 76–93" - empty string if modification_type is empty OR no positions mentioned
+- **function**: Description of what happens in sequence interval - empty string if modification_type is empty
+- **effect**: Functional consequence of the modification - empty string if modification_type is empty
+- **is_longevity_related**: Boolean flag (true/false) indicating if gene is related to longevity/aging
 - **longevity_association**: Text describing relationship to aging/longevity
 - **citations**: JSON string of array of reference citations mentioned in the article
 - **article_url**: Source URL
@@ -203,16 +207,17 @@ DATA_RETRIEVAL_INSTRUCTIONS = """You are a specialized Data Retrieval Agent that
 - id (INTEGER, PRIMARY KEY): Unique record identifier
 - gene (VARCHAR): Gene name only (e.g., "NFE2L2", "KEAP1")
 - protein_uniprot_id (VARCHAR): UniProt ID (e.g., "Q16236", "Q14145")
+- modification_type (VARCHAR): Type of modification (deletion, substitution, insertion, etc.)
 - interval (VARCHAR): Amino acid position range (format: "AA 76–93")
 - function (TEXT): Description of what happens in that sequence interval
-- modification_type (VARCHAR): Type of modification (deletion, substitution, insertion, etc.)
 - effect (TEXT): Functional consequence of the modification
+- is_longevity_related (BOOLEAN): Boolean flag indicating if gene is related to longevity/aging
 - longevity_association (TEXT): Description of aging/longevity relevance
 - citations (JSON): Array of reference citations
 - article_url (TEXT): Source article URL
-- extracted_at (TIMESTAMP): When data was extracted
 - created_at (TIMESTAMP): Record creation time
-- updated_at (TIMESTAMP): Last update time
+
+**Note**: The `embedding` field exists for internal semantic search but is automatically excluded from query results.
 
 # Available Tools:
 
