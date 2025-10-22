@@ -109,40 +109,117 @@ class DatabaseService:
             return []
     
     @staticmethod
-    async def import_csv_to_database(csv_path: str, db_session: AsyncSession) -> bool:
-        """Import CSV data into sequence_data table"""
+    async def import_csv_to_database(csv_path: str, db_session: AsyncSession, batch_size: int = 50) -> bool:
+        """
+        Import CSV data into sequence_data table with batch embedding generation.
+
+        Args:
+            csv_path: Path to CSV file
+            db_session: Database session
+            batch_size: Number of records to process in each batch for embeddings (default: 50)
+        """
         try:
             if not Path(csv_path).exists():
                 logger.warning(f"CSV file not found: {csv_path}")
                 return False
-            
+
             df = pd.read_csv(csv_path)
-            logger.info(f"Loading {len(df)} records from {csv_path}")
-            
-            for _, row in df.iterrows():
-                try:                    
-                    await DatabaseService.save_sequence_data(
-                        gene=str(row['gene']) if pd.notna(row['gene']) else '',
-                        protein_uniprot_id=str(row.get('protein_uniprot_id', '')) if pd.notna(row.get('protein_uniprot_id')) else '',
-                        modification_type=str(row.get('modification_type', '')) if pd.notna(row.get('modification_type')) else '',
-                        interval=str(row.get('interval', '')) if pd.notna(row.get('interval')) else '',
-                        function=str(row.get('function', '')) if pd.notna(row.get('function')) else '',
-                        effect=str(row.get('effect', '')) if pd.notna(row.get('effect')) else '',
-                        is_longevity_related=bool(row.get('is_longevity_related', False)) if pd.notna(row.get('is_longevity_related')) else False,
-                        longevity_association=str(row.get('longevity_association', '')) if pd.notna(row.get('longevity_association')) else '',
-                        citations=json.loads(row['citations']) if pd.notna(row['citations']) and row['citations'] else [],
-                        article_url=str(row.get('article_url', '')) if pd.notna(row.get('article_url')) else '',
-                        created_at=datetime.fromisoformat(row['created_at']) if pd.notna(row['created_at']) and row['created_at'] else None,
-                        db_session=db_session,
-                        export_to_csv=False  # Don't export to CSV when importing from CSV
-                    )
-                    
-                except Exception as e:
-                    logger.error(f"Error processing row {row.get('gene', 'unknown')}: {str(e)}")
-                    continue
+            total_records = len(df)
+            logger.info(f"Loading {total_records} records from {csv_path}")
+
+            # Get embedding service
+            embedding_service = get_embedding_service()
+            if not embedding_service:
+                logger.warning("Embedding service not available, importing without embeddings")
+                batch_size = 0  # Disable batch processing
+
+            # Process records in batches
+            for batch_start in range(0, total_records, max(1, batch_size)):
+                batch_end = min(batch_start + batch_size, total_records)
+                batch_df = df.iloc[batch_start:batch_end]
+
+                logger.info(f"Processing batch {batch_start}-{batch_end} of {total_records}")
+
+                # Prepare batch data
+                batch_records = []
+                batch_texts = []
+
+                for _, row in batch_df.iterrows():
+                    try:
+                        gene = str(row['gene']) if pd.notna(row['gene']) else ''
+                        function = str(row.get('function', '')) if pd.notna(row.get('function')) else ''
+                        effect = str(row.get('effect', '')) if pd.notna(row.get('effect')) else ''
+                        longevity_association = str(row.get('longevity_association', '')) if pd.notna(row.get('longevity_association')) else ''
+
+                        # Create record data
+                        record_data = {
+                            'gene': gene,
+                            'protein_uniprot_id': str(row.get('protein_uniprot_id', '')) if pd.notna(row.get('protein_uniprot_id')) else '',
+                            'modification_type': str(row.get('modification_type', '')) if pd.notna(row.get('modification_type')) else '',
+                            'interval': str(row.get('interval', '')) if pd.notna(row.get('interval')) else '',
+                            'function': function,
+                            'effect': effect,
+                            'is_longevity_related': bool(row.get('is_longevity_related', False)) if pd.notna(row.get('is_longevity_related')) else False,
+                            'longevity_association': longevity_association,
+                            'citations': json.loads(row['citations']) if pd.notna(row['citations']) and row['citations'] else [],
+                            'article_url': str(row.get('article_url', '')) if pd.notna(row.get('article_url')) else '',
+                            'created_at': datetime.fromisoformat(row['created_at']) if pd.notna(row['created_at']) and row['created_at'] else datetime.now(timezone.utc),
+                        }
+
+                        batch_records.append(record_data)
+
+                        # Create search text for embedding
+                        if embedding_service:
+                            search_text = create_search_text(gene, function, effect, longevity_association)
+                            batch_texts.append(search_text)
+
+                    except Exception as e:
+                        logger.error(f"Error preparing row {row.get('gene', 'unknown')}: {str(e)}")
+                        continue
+
+                # Generate embeddings for the batch
+                embeddings = []
+                if embedding_service and batch_texts:
+                    logger.info(f"Generating embeddings for batch of {len(batch_texts)} records")
+                    embeddings = await embedding_service.generate_embeddings_batch(batch_texts)
+                    logger.info(f"Generated {sum(1 for e in embeddings if e is not None)} embeddings")
+
+                # Save records to database
+                for i, record_data in enumerate(batch_records):
+                    try:
+                        # Add embedding if available
+                        embedding = embeddings[i] if i < len(embeddings) else None
+
+                        sequence_data = SequenceData(
+                            gene=record_data['gene'],
+                            protein_uniprot_id=record_data['protein_uniprot_id'],
+                            modification_type=record_data['modification_type'],
+                            interval=record_data['interval'],
+                            function=record_data['function'],
+                            effect=record_data['effect'],
+                            is_longevity_related=record_data['is_longevity_related'],
+                            longevity_association=record_data['longevity_association'],
+                            citations=record_data['citations'],
+                            article_url=record_data['article_url'],
+                            created_at=record_data['created_at'],
+                            embedding=embedding
+                        )
+
+                        db_session.add(sequence_data)
+
+                    except Exception as e:
+                        logger.error(f"Error saving record {record_data.get('gene', 'unknown')}: {str(e)}")
+                        continue
+
+                # Commit batch
+                await db_session.commit()
+                logger.info(f"Committed batch {batch_start}-{batch_end}")
+
+            logger.info(f"Successfully imported {total_records} records from {csv_path}")
             return True
-            
+
         except Exception as e:
+            await db_session.rollback()
             logger.error(f"Error importing CSV {csv_path}: {str(e)}")
             return False
     
@@ -236,9 +313,9 @@ class DatabaseService:
             break
 
     @staticmethod
-    async def generate_missing_embeddings(db_session):
+    async def generate_missing_embeddings(db_session, batch_size: int = 50):
         """
-        Generate embeddings for all records that don't have them.
+        Generate embeddings for all records that don't have them using batch processing.
 
         This is useful when:
         - Database was created before embeddings were implemented
@@ -247,6 +324,7 @@ class DatabaseService:
 
         Args:
             db_session: AsyncSession - database session to use
+            batch_size: Number of embeddings to generate in each batch (default: 50)
         """
         embedding_service = get_embedding_service()
         if not embedding_service:
@@ -263,11 +341,22 @@ class DatabaseService:
             logger.info("No records found without embeddings")
             return 0
 
-        logger.info(f"Generating embeddings for {len(records)} records...")
+        total_records = len(records)
+        logger.info(f"Generating embeddings for {total_records} records using batch processing...")
         generated = 0
 
-        for record in records:
-            try:
+        # Process records in batches
+        for batch_start in range(0, total_records, batch_size):
+            batch_end = min(batch_start + batch_size, total_records)
+            batch_records = records[batch_start:batch_end]
+
+            logger.info(f"Processing batch {batch_start}-{batch_end} of {total_records}")
+
+            # Prepare batch texts
+            batch_texts = []
+            batch_record_map = []  # Map to track which text belongs to which record
+
+            for record in batch_records:
                 search_text = create_search_text(
                     record.gene,
                     record.function,
@@ -276,20 +365,34 @@ class DatabaseService:
                 )
 
                 if search_text:
-                    embedding = await embedding_service.generate_embedding(search_text)
-                    if embedding:
-                        record.embedding = embedding
-                        generated += 1
-                        logger.debug(f"Generated embedding for gene {record.gene} (ID: {record.id})")
-                    else:
-                        logger.warning(f"Failed to generate embedding for gene {record.gene} (ID: {record.id})")
+                    batch_texts.append(search_text)
+                    batch_record_map.append(record)
                 else:
                     logger.warning(f"No search text for gene {record.gene} (ID: {record.id})")
 
-            except Exception as e:
-                logger.error(f"Error generating embedding for record {record.id}: {str(e)}")
+            # Generate embeddings for the batch
+            if batch_texts:
+                try:
+                    logger.info(f"Generating embeddings for batch of {len(batch_texts)} records")
+                    embeddings = await embedding_service.generate_embeddings_batch(batch_texts)
 
-        # Commit all changes
-        await db_session.commit()
-        logger.info(f"Successfully generated {generated} embeddings out of {len(records)} records")
+                    # Assign embeddings to records
+                    for i, embedding in enumerate(embeddings):
+                        if embedding and i < len(batch_record_map):
+                            record = batch_record_map[i]
+                            record.embedding = embedding
+                            generated += 1
+                            logger.debug(f"Generated embedding for gene {record.gene} (ID: {record.id})")
+                        elif i < len(batch_record_map):
+                            record = batch_record_map[i]
+                            logger.warning(f"Failed to generate embedding for gene {record.gene} (ID: {record.id})")
+
+                except Exception as e:
+                    logger.error(f"Error generating embeddings for batch: {str(e)}")
+
+            # Commit batch changes
+            await db_session.commit()
+            logger.info(f"Committed batch {batch_start}-{batch_end}, total generated: {generated}")
+
+        logger.info(f"Successfully generated {generated} embeddings out of {total_records} records")
         return generated
