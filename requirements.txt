@@ -11,3 +11,4 @@ aiohttp
 pandas
 mygene
 pgvector
+python-dotenv
