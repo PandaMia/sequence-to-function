@@ -896,7 +896,7 @@
             }
 
             async streamResponse(userMessage) {
-                const url = `/extract-sequence-function?session-id=${encodeURIComponent(this.sessionId)}`;
+                const url = `/stf/extract?session-id=${encodeURIComponent(this.sessionId)}`;
                 
                 const requestBody = {
                     user_message: userMessage,

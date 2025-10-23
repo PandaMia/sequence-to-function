@@ -1,18 +1,8 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Any
-from openai import AsyncOpenAI
+from typing import Optional
 from agents import ModelSettings
 from configs.config import DEFAULT_STF_MODEL_SETTINGS
 from configs.types import ModelName
-
-
-class AppState(BaseModel):
-    openai_client: AsyncOpenAI
-    embedding_service: Optional[Any] = None  # EmbeddingService, but using Any to avoid circular import
-    port: int
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class ModelConfig(BaseModel):

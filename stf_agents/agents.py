@@ -1,16 +1,16 @@
-from agents import Agent
-from agents import RunConfig
-import stf_agents.prompts as prompts
-from stf_agents.tools import (
-    save_to_database,
-    fetch_article_content,
-    web_search_tool,
-    execute_sql_query,
-    get_uniprot_id,
-    vision_media,
-    semantic_search,
-)
-from stf_agents.schemas import ParsingOutput
+"""Agent factory functions for creating STF agents.
+
+This module provides factory functions for creating agents,
+maintaining backward compatibility with the existing codebase.
+"""
+
+from agents import Agent, RunConfig
+
+from stf_agents.manager import STFManagerAgent
+from stf_agents.article_parsing import ArticleParsingAgent
+from stf_agents.data_retrieval import DataRetrievalAgent
+from stf_agents.article_writing import ArticleWritingAgent
+from stf_agents.vision import VisionAgent
 
 
 def create_stf_manager_agent(
@@ -20,110 +20,75 @@ def create_stf_manager_agent(
     article_writing_agent: Agent,
     vision_agent: Agent
 ) -> Agent:
-    agent_kwargs = {
-        "name": "Sequence To Function Manager",
-        "instructions": prompts.MANAGER_INSTRUCTIONS,
-        "tools": [],
-        "handoffs": [
-            article_parsing_agent,
-            data_retrieval_agent,
-            article_writing_agent,
-            vision_agent,
-        ],
-        "model": run_config.model,
-        "reset_tool_choice": True,
-    }
+    """
+    Create the STF Manager agent.
 
-    if run_config.model_settings is not None:
-        agent_kwargs["model_settings"] = run_config.model_settings
+    Args:
+        run_config: Run configuration with model settings
+        article_parsing_agent: Agent for parsing research articles
+        data_retrieval_agent: Agent for querying database
+        article_writing_agent: Agent for writing content
+        vision_agent: Agent for analyzing images and PDFs
 
-    return Agent(**agent_kwargs)
+    Returns:
+        Configured STF Manager agent
+    """
+    return STFManagerAgent(
+        run_config=run_config,
+        article_parsing_agent=article_parsing_agent,
+        data_retrieval_agent=data_retrieval_agent,
+        article_writing_agent=article_writing_agent,
+        vision_agent=vision_agent,
+    )
 
 
 def create_article_parsing_agent(run_config: RunConfig) -> Agent:
-    agent_kwargs = {
-        "name": "Article Parsing Agent",
-        "instructions": prompts.ARTICLE_PARSING_INSTRUCTIONS,
-        "tools": [
-            fetch_article_content,
-            web_search_tool,
-            get_uniprot_id,
-            save_to_database,
-        ],
-        "handoff_description": "Analyze research articles to extract longevity-related genes and sequence-function relationships.",
-        "model": run_config.model,
-        "reset_tool_choice": True,
-        "output_type": ParsingOutput
-    }
-
-    if run_config.model_settings is not None:
-        agent_kwargs["model_settings"] = run_config.model_settings
-
-    return Agent(**agent_kwargs)
-
-
-def create_data_retrieval_agent(run_config: RunConfig) -> Agent:
-    agent_kwargs = {
-        "name": "Data Retrieval Agent",
-        "instructions": prompts.DATA_RETRIEVAL_INSTRUCTIONS,
-        "tools": [
-            execute_sql_query,
-            semantic_search,
-        ],
-        "handoff_description": "Query the sequence-function database using SQL and semantic search. Find genes, proteins, and research data based on user requests.",
-        "model": run_config.model,
-        "reset_tool_choice": True,
-    }
-
-    if run_config.model_settings is not None:
-        agent_kwargs["model_settings"] = run_config.model_settings
-
-    return Agent(**agent_kwargs)
-
-
-def create_article_writing_agent(
-    run_config: RunConfig,
-) -> Agent:
-    agent_kwargs = {
-        "name": "Article Writing Agent",
-        "instructions": prompts.ARTICLE_WRITING_INSTRUCTIONS,
-        "tools": [
-            semantic_search
-        ],
-        "handoff_description": "Generate research articles, summaries, and reports based on sequence-function data stored in the database. Create scientific content about longevity genes and pathways.",
-        "model": run_config.model,
-        "reset_tool_choice": True,
-    }
-
-    if run_config.model_settings is not None:
-        agent_kwargs["model_settings"] = run_config.model_settings
-
-    return Agent(**agent_kwargs)
-
-
-def create_vision_agent(run_config: RunConfig) -> Agent:
     """
-    Create a Vision Analysis Agent that processes image and PDF URLs.
-
-    This agent specializes in analyzing scientific figures and documents to extract
-    sequence-function information. It can process up to 8 images and 1 PDF per request.
+    Create the Article Parsing agent.
 
     Args:
         run_config: Run configuration with model settings
 
     Returns:
-        Configured Vision Agent
+        Configured Article Parsing agent
     """
-    agent_kwargs = {
-        "name": "Vision Analysis Agent",
-        "instructions": prompts.VISION_AGENT_INSTRUCTIONS,
-        "tools": [vision_media],
-        "handoff_description": "Analyze images and PDF documents from URLs to extract sequence-function data",
-        "model": run_config.model,
-        "reset_tool_choice": True,
-    }
+    return ArticleParsingAgent(run_config=run_config)
 
-    if run_config.model_settings is not None:
-        agent_kwargs["model_settings"] = run_config.model_settings
 
-    return Agent(**agent_kwargs)
+def create_data_retrieval_agent(run_config: RunConfig) -> Agent:
+    """
+    Create the Data Retrieval agent.
+
+    Args:
+        run_config: Run configuration with model settings
+
+    Returns:
+        Configured Data Retrieval agent
+    """
+    return DataRetrievalAgent(run_config=run_config)
+
+
+def create_article_writing_agent(run_config: RunConfig) -> Agent:
+    """
+    Create the Article Writing agent.
+
+    Args:
+        run_config: Run configuration with model settings
+
+    Returns:
+        Configured Article Writing agent
+    """
+    return ArticleWritingAgent(run_config=run_config)
+
+
+def create_vision_agent(run_config: RunConfig) -> Agent:
+    """
+    Create the Vision Analysis agent.
+
+    Args:
+        run_config: Run configuration with model settings
+
+    Returns:
+        Configured Vision agent
+    """
+    return VisionAgent(run_config=run_config)

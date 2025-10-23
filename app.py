@@ -1,16 +1,16 @@
-from typing import cast
-from fastapi import FastAPI, Query
-from fastapi.responses import StreamingResponse, FileResponse
-from utils.start_up import lifespan_start_up
-from configs.endpoints_base_models import AppState, StfRequest
-from manager import run_stf_agent_stream
+"""Sequence-to-Function FastAPI application."""
+
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+
+from app_startup.lifespan import lifespan
+from api.stf.router import router as stf_router
 from testing_endpoints.router import get_testing_router
 
-
-app = FastAPI(lifespan=lifespan_start_up)
-
-# Add testing router
-testing_router = get_testing_router(lambda: cast(AppState, app.state))
+# Create FastAPI app with lifespan management
+app = FastAPI(lifespan=lifespan)
+testing_router = get_testing_router(lambda: app.state)
+app.include_router(stf_router)
 app.include_router(testing_router)
 
 
@@ -22,35 +22,13 @@ async def serve_chat_ui():
 
 @app.get("/health")
 async def health_check():
+    """Health check endpoint."""
     return {"status": "healthy"}
-
-
-@app.post("/extract-sequence-function")
-async def extract_sequence_function(
-    request: StfRequest,
-    session_id: str = Query(..., alias="session-id"),
-):
-    """
-    Extract protein/gene sequence-to-function relationships from a research article.
-    
-    Args:
-        request: Contains article_link and optional session_id and model configuration
-        
-    Returns:
-        Streaming response with extraction progress and results
-    """
-    return StreamingResponse(
-        run_stf_agent_stream(request, cast(AppState, app.state), session_id),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
-    )
 
 
 if __name__ == "__main__":
     import uvicorn
-    from utils.start_up import configure_logging
+    from app_startup.lifespan import configure_logging
+
     configure_logging()
     uvicorn.run(app, host="0.0.0.0", port=8080, use_colors=True)
-
-    # Run: 
-    # uvicorn app:app --host 0.0.0.0 --port 8080

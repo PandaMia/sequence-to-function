@@ -1,10 +1,15 @@
+"""Business logic for STF agent execution."""
+
 import uuid
 import json
 import logging
 from typing import AsyncGenerator
+
 from agents import SQLiteSession
 from agents.items import TResponseInputItem
-from configs.endpoints_base_models import AppState, StfRequest
+
+from app_startup.state import AppState
+from api.stf.schemas import StfRequest
 from configs.config import TaskModelConfig
 from stf_agents.agents import (
     create_stf_manager_agent,
@@ -19,7 +24,6 @@ from utils.sse import json_event
 from utils.sqlite_utils import get_db_path
 from utils.app_context import set_app_state_context
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +32,17 @@ async def run_stf_agent_stream(
     app_state: AppState,
     session_id: str
 ) -> AsyncGenerator[str, None]:
+    """
+    Execute the STF agent with streaming output.
+
+    Args:
+        request: STF request with user message and model config
+        app_state: Application state with clients and services
+        session_id: Session ID for conversation tracking
+
+    Yields:
+        SSE formatted events with agent execution progress
+    """
     session_id = session_id or f"session_{uuid.uuid4().hex}"
 
     yield json_event("start", {"status": "started", "session_id": session_id})

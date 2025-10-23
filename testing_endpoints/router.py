@@ -5,8 +5,9 @@ Testing endpoints router for sequence-to-function service
 from typing import Callable
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
-from configs.database import get_db   
-from configs.endpoints_base_models import AppState, SQLQueryRequest
+from configs.database import get_db
+from app_startup.state import AppState
+from configs.endpoints_base_models import SQLQueryRequest
 
 
 def get_testing_router(app_state_getter: Callable[[], AppState]) -> APIRouter:
