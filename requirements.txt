@@ -1,4 +1,4 @@
-openai-agents[litellm]==0.3.3
+openai-agents[litellm]==0.4.1
 openai[aiohttp]
 fastapi
 uvicorn[standard]

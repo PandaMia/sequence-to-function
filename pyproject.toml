@@ -1,0 +1,39 @@
+[project]
+name = "sequence-to-function"
+version = "0.1.0"
+description = "An agent-based system for generating a knowledge base from all publicly available sources regarding the relationships between protein sequences and their functions"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "openai-agents[litellm]==0.4.1",
+    "openai[aiohttp]",
+    "fastapi",
+    "uvicorn[standard]",
+    "requests",
+    "beautifulsoup4",
+    "pydantic",
+    "asyncpg",
+    "sqlalchemy[asyncio]",
+    "aiohttp",
+    "pandas",
+    "mygene",
+    "pgvector",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["stf_agents", "configs", "utils", "runner", "testing_endpoints"]

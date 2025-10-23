@@ -50,7 +50,7 @@ if __name__ == "__main__":
     import uvicorn
     from utils.start_up import configure_logging
     configure_logging()
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8080, use_colors=True)
 
     # Run: 
     # uvicorn app:app --host 0.0.0.0 --port 8080

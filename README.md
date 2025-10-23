@@ -6,8 +6,21 @@ An agent-based system for generating a knowledge base from all publicly availabl
 
 ### Prerequisites
 - Docker and Docker Compose installed
-- Python 3.12+ with required dependencies
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) package manager (fast Python package installer)
 - OpenAI API key (for embeddings and AI agents)
+
+**Install uv:**
+```bash
+# macOS and Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Or via pip
+pip install uv
+```
 
 ### Setup Instructions
 
@@ -63,13 +76,20 @@ export DATABASE_URL="postgresql+asyncpg://postgres:password@localhost:5432/seque
 
 #### 3. Install Python Dependencies
 ```bash
-# Install required packages
-pip install -r requirements.txt
+# Install dependencies using uv (creates virtual environment automatically)
+uv sync
+
+# Alternative: Install without creating a project virtual environment
+uv pip install -r requirements.txt
 ```
 
 #### 4. Start the Application
 ```bash
-# Run the FastAPI application
+# Run the FastAPI application using uv
+uv run uvicorn app:app --host 0.0.0.0 --port 8080
+
+# Or activate the virtual environment and run directly
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uvicorn app:app --host 0.0.0.0 --port 8080
 ```
 

@@ -51,7 +51,23 @@ async def run_agent_stream(
         async for event in result.stream_events():
             # Handle reasoning deltas
             if event.type == "raw_response_event":
+                # Handle reasoning part completion (add newlines between parts)
                 if (
+                    hasattr(event.data, "type")
+                    and event.data.type == "response.reasoning_summary_part.done"
+                ):
+                    # Send a newline to separate reasoning parts
+                    event_data = {
+                        'type': 'reasoning_delta',
+                        'content': '\n\n',
+                    }
+                    if event_queue:
+                        await event_queue.put(('reasoning_delta', event_data))
+                    else:
+                        yield json.dumps(event_data)
+
+                # Handle reasoning text deltas
+                elif (
                     hasattr(event.data, "type")
                     and event.data.type == "response.reasoning_summary_text.delta"
                 ):

@@ -203,6 +203,137 @@
             flex-shrink: 0; /* Don't shrink session info */
         }
 
+        .reasoning-card {
+            padding: 0;
+            border: 1px solid #00ff00;
+            background: rgba(0, 15, 0, 0.85);
+            box-shadow: 0 0 18px rgba(0, 255, 0, 0.18);
+            position: relative;
+        }
+
+        .reasoning-card.collapsed {
+            box-shadow: 0 0 12px rgba(0, 255, 0, 0.1);
+        }
+
+        .reasoning-card.collapsed .reasoning-body {
+            display: none;
+        }
+
+        .reasoning-card.has-content {
+            box-shadow: 0 0 22px rgba(0, 255, 0, 0.35);
+        }
+
+        .reasoning-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            font-family: 'Courier Prime', monospace;
+            font-size: 0.95rem;
+            font-weight: bold;
+            color: #00ff00;
+            background: rgba(0, 35, 0, 0.85);
+            cursor: pointer;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            user-select: none;
+            border-bottom: 1px solid #00ff00;
+        }
+
+        .reasoning-header .reasoning-icon {
+            transition: transform 0.2s ease-in-out;
+            font-size: 0.85rem;
+            color: #88ff88;
+        }
+
+        .reasoning-card.collapsed .reasoning-header .reasoning-icon {
+            transform: rotate(-90deg);
+        }
+
+        .reasoning-body {
+            padding: 0.75rem 1rem 1rem;
+            max-height: 240px;
+            overflow-y: auto;
+            font-family: 'Courier Prime', monospace;
+        }
+
+        .reasoning-body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .reasoning-body::-webkit-scrollbar-track {
+            background: #001100;
+        }
+
+        .reasoning-body::-webkit-scrollbar-thumb {
+            background: #00ff00;
+            border-radius: 3px;
+        }
+
+        .reasoning-placeholder {
+            color: #004400;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+        }
+
+        .reasoning-markdown {
+            color: #88ff88;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .reasoning-markdown h1,
+        .reasoning-markdown h2,
+        .reasoning-markdown h3,
+        .reasoning-markdown h4,
+        .reasoning-markdown h5,
+        .reasoning-markdown h6 {
+            color: #00ff00;
+            margin-top: 0.75rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.6);
+            border-bottom: 1px solid rgba(0, 255, 0, 0.2);
+            padding-bottom: 0.25rem;
+        }
+
+        .reasoning-markdown p {
+            margin: 0.5rem 0;
+        }
+
+        .reasoning-markdown strong {
+            color: #00ff00;
+        }
+
+        .reasoning-markdown em {
+            color: #aaffaa;
+        }
+
+        .reasoning-markdown ul,
+        .reasoning-markdown ol {
+            margin: 0.5rem 0 0.5rem 1.5rem;
+        }
+
+        .reasoning-markdown code {
+            background: rgba(0, 40, 0, 0.8);
+            border: 1px solid rgba(0, 255, 0, 0.25);
+            padding: 0.15rem 0.3rem;
+            border-radius: 2px;
+            color: #88ff88;
+        }
+
+        .reasoning-markdown pre {
+            background: rgba(0, 40, 0, 0.85);
+            border: 1px solid rgba(0, 255, 0, 0.3);
+            padding: 0.75rem;
+            overflow-x: auto;
+        }
+
+        .reasoning-markdown pre code {
+            background: none;
+            border: none;
+            padding: 0;
+        }
+
         .stream-message {
             white-space: pre-wrap;
             font-family: 'Courier Prime', monospace;
@@ -471,6 +602,12 @@
                 this.sendButton = document.getElementById('send-button');
                 this.loading = document.getElementById('loading');
                 this.currentStreamDiv = null;
+                this.reasoningCard = null;
+                this.reasoningToggle = null;
+                this.reasoningContent = null;
+                this.reasoningPlaceholder = null;
+                this.reasoningMarkdown = null;
+                this.reasoningBuffer = '';
 
                 this.init();
             }
@@ -487,6 +624,7 @@
                 console.log('Message input:', this.messageInput);
                 console.log('Loading element:', this.loading);
                 console.log('Messages container:', this.messagesContainer);
+                console.log('Reasoning card:', this.reasoningCard);
                 
                 // Use arrow functions to preserve 'this' context
                 this.sendButton.addEventListener('click', (e) => {
@@ -494,7 +632,7 @@
                     e.preventDefault();
                     this.sendMessage();
                 });
-                
+
                 this.messageInput.addEventListener('keypress', (e) => {
                     console.log('Key pressed:', e.key);
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -509,7 +647,7 @@
                     console.log('Direct onclick triggered');
                     this.sendMessage();
                 };
-                
+
                 this.messageInput.focus();
                 console.log('Initialization complete');
             }
@@ -742,6 +880,7 @@
                 }
 
                 this.addMessage(message, true);
+                this.resetReasoningPanel();
                 this.messageInput.value = '';
                 this.setLoading(true);
 
@@ -913,6 +1052,8 @@
                     statusDiv.innerHTML = `<em>${this.escapeHtml(event.message)}</em>`;
                     this.currentStreamDiv.appendChild(statusDiv);
                     this.scrollToBottom();
+                } else if (event.type === 'reasoning_delta') {
+                    this.appendReasoningDelta(event.content || '');
                 }
                 // Ignore other event types for cleaner UI
             }
@@ -945,6 +1086,93 @@
                 streamDiv.textContent = content;
                 this.currentStreamDiv.appendChild(streamDiv);
                 this.scrollToBottom();
+            }
+
+            toggleReasoningPanel() {
+                if (!this.reasoningCard) return;
+                this.reasoningCard.classList.toggle('collapsed');
+                if (!this.reasoningCard.classList.contains('collapsed') && this.reasoningContent) {
+                    this.reasoningContent.scrollTop = this.reasoningContent.scrollHeight;
+                }
+            }
+
+            createReasoningCard() {
+                // Create the reasoning card element
+                const reasoningCard = document.createElement('div');
+                reasoningCard.className = 'message bot-message reasoning-card collapsed';
+
+                const reasoningHeader = document.createElement('div');
+                reasoningHeader.className = 'reasoning-header';
+                reasoningHeader.innerHTML = '<span>THOUGHT PROCESS</span><span class="reasoning-icon">▼</span>';
+                reasoningHeader.addEventListener('click', () => this.toggleReasoningPanel());
+
+                const reasoningBody = document.createElement('div');
+                reasoningBody.className = 'reasoning-body';
+
+                const reasoningPlaceholder = document.createElement('div');
+                reasoningPlaceholder.className = 'reasoning-placeholder';
+                reasoningPlaceholder.textContent = 'Awaiting reasoning stream...';
+
+                const reasoningMarkdown = document.createElement('div');
+                reasoningMarkdown.className = 'reasoning-markdown';
+
+                reasoningBody.appendChild(reasoningPlaceholder);
+                reasoningBody.appendChild(reasoningMarkdown);
+
+                reasoningCard.appendChild(reasoningHeader);
+                reasoningCard.appendChild(reasoningBody);
+
+                // Store references
+                this.reasoningCard = reasoningCard;
+                this.reasoningToggle = reasoningHeader;
+                this.reasoningContent = reasoningBody;
+                this.reasoningPlaceholder = reasoningPlaceholder;
+                this.reasoningMarkdown = reasoningMarkdown;
+                this.reasoningBuffer = '';
+
+                return reasoningCard;
+            }
+
+            resetReasoningPanel() {
+                // Create a new reasoning card for this conversation turn
+                const reasoningCard = this.createReasoningCard();
+
+                // Insert it into the messages container (it will be positioned after user message)
+                this.messagesContainer.appendChild(reasoningCard);
+                this.scrollToBottom();
+            }
+
+            appendReasoningDelta(delta) {
+                if (!this.reasoningCard || !this.reasoningContent || !this.reasoningMarkdown) {
+                    return;
+                }
+
+                if (typeof delta !== 'string') {
+                    try {
+                        delta = JSON.stringify(delta);
+                    } catch (e) {
+                        delta = String(delta);
+                    }
+                }
+
+                if (!delta) {
+                    return;
+                }
+
+                if (this.reasoningPlaceholder) {
+                    this.reasoningPlaceholder.remove();
+                    this.reasoningPlaceholder = null;
+                }
+
+                this.reasoningBuffer += delta;
+                const rendered = marked.parse(this.reasoningBuffer);
+                this.reasoningMarkdown.innerHTML = DOMPurify.sanitize(rendered);
+                this.reasoningCard.classList.add('has-content');
+                this.reasoningCard.classList.remove('collapsed');
+
+                if (this.reasoningContent) {
+                    this.reasoningContent.scrollTop = this.reasoningContent.scrollHeight;
+                }
             }
         }
 
