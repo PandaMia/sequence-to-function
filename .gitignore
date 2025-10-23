@@ -129,8 +129,8 @@ dmypy.json
 .pyre/
 
 # Data files
-data/
 *.json
+/test
 
 # Database files
 *.db

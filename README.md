@@ -89,6 +89,7 @@ On first startup, the application will:
 ### Service Features
 
 - **Article Parsing**: Extract sequence-function data from research papers
+- **Vision Parcing**: AI-powered analysis of scientific figures, tables, and supplementary materials to extract sequence data not available in text
 - **Data Retrieval**: Query database with SQL and semantic search
 - **Article Writing**: Generate research content from stored data
 - **Chat Interface**: Interactive UI for all agent capabilities
