@@ -1,5 +1,5 @@
-openai-agents[litellm]==0.4.1
-openai[aiohttp]
+openai-agents[litellm]==0.14.1
+openai[aiohttp]==2.32.0
 fastapi
 uvicorn[standard]
 requests

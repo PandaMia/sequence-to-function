@@ -1,39 +1,30 @@
-from pydantic import BaseModel
-from typing import List, Optional
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
 
 class Citation(BaseModel):
-    title: str
-    authors: List[str] = []
+    title: Optional[str] = None
+    authors: list[str] = Field(default_factory=list)
     year: Optional[int] = None
     doi: Optional[str] = None
     url: Optional[str] = None
+    raw: Optional[str] = None
+
 
 class ParsingGene(BaseModel):
     gene: str
     protein_uniprot_id: str
-    modification_type: str # e.g., "deletion", "substitution"
+    modification_type: str  # e.g., "deletion", "substitution"
     interval: str
     function: str
-    effect: str # effect of the modification
+    effect: str  # effect of the modification
     is_longevity_related: bool
     longevity_association: str
-    citations: List[Citation] = []
+    citations: list[Citation] = Field(default_factory=list)
     article_url: str
 
+
 class ParsingOutput(BaseModel):
-    summary: str # answer to the question in accordance with the information found/brief description of the article
-    genes: List[ParsingGene] = []
-
-class ArticleContext(BaseModel):
-    article_url: Optional[str] = None
-    text: Optional[str]
-    image_urls: List[str] = []
-    pdf_urls: List[str] = []
-    error: Optional[str] = None
-
-class MediaNote(BaseModel):
-    url: str               
-    kind: str   # "image" | "pdf"
-    description: str       # summary or caption
-    relevance: bool = True
-    relevance_score: float = 1.0
+    summary: str  # Brief description of the article or answer.
+    genes: list[ParsingGene] = Field(default_factory=list)

@@ -11,13 +11,7 @@ from agents.items import TResponseInputItem
 from app_startup.state import AppState
 from api.stf.schemas import StfRequest
 from configs.config import TaskModelConfig
-from stf_agents.agents import (
-    create_stf_manager_agent,
-    create_article_parsing_agent,
-    create_data_retrieval_agent,
-    create_article_writing_agent,
-    create_vision_agent,
-)
+from stf_agents.agents import create_stf_agent
 from runner.stream import run_agent_stream
 from utils.create_config import create_stf_run_config
 from utils.sse import json_event
@@ -85,20 +79,7 @@ async def run_stf_agent_stream(
             f"Run config created - session_id: {session_id}, model: {request.stf_model.model_name}"
         )
 
-        # Create specialized agents
-        article_parsing_agent = create_article_parsing_agent(run_config)
-        data_retrieval_agent = create_data_retrieval_agent(run_config)
-        article_writing_agent = create_article_writing_agent(run_config)
-        vision_agent = create_vision_agent(run_config)
-
-        # Create manager agent with handoffs
-        agent = create_stf_manager_agent(
-            run_config,
-            article_parsing_agent,
-            data_retrieval_agent,
-            article_writing_agent,
-            vision_agent
-        )
+        agent = create_stf_agent(run_config)
 
         logger.debug(
             f"Agent created - session_id: {session_id}, model: {request.stf_model.model_name}"

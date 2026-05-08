@@ -822,44 +822,6 @@
                 return div.innerHTML;
             }
 
-            isAgentTransferOutput(content) {
-                // Check if this is an agent transfer message (just routing, not user-facing data)
-                try {
-                    const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
-                    const parsed = typeof content === 'string' ? JSON.parse(content) : content;
-
-                    // Agent transfer outputs typically have just a "message" field with descriptive text
-                    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                        // Single object with only "message" field
-                        if ('message' in parsed && Object.keys(parsed).length === 1) {
-                            const msgContent = parsed.message;
-
-                            // Check if the message field contains actual data (array/object)
-                            if (typeof msgContent === 'string') {
-                                try {
-                                    const msgParsed = JSON.parse(msgContent);
-                                    // If message contains an array or object, it's NOT just routing
-                                    if (Array.isArray(msgParsed) || typeof msgParsed === 'object') {
-                                        return false; // This is actual data, not a routing message
-                                    }
-                                } catch (e) {
-                                    // String message that's not JSON
-                                }
-                            }
-
-                            // If message is a string description (not data), it's a routing message
-                            if (typeof msgContent === 'string' && msgContent.length > 0 &&
-                                !msgContent.startsWith('[') && !msgContent.startsWith('{')) {
-                                return true;
-                            }
-                        }
-                    }
-                } catch (e) {
-                    // Not JSON, probably not an agent transfer
-                }
-                return false;
-            }
-
             scrollToBottom() {
                 this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
             }
@@ -1014,24 +976,10 @@
                         }
                     }
                 } else if (event.type === 'tool_call') {
-                    // Filter out agent transfer tool calls - they're internal routing
                     const toolName = event.tool || 'unknown';
-                    if (toolName.includes('transfer_to_') || toolName.includes('_agent')) {
-                        // Skip agent transfer tool calls - they're just routing
-                        return;
-                    }
-
-                    // Show meaningful tool calls for transparency
-                    const args = event.arguments ? JSON.stringify(event.arguments, null, 2) : '';
                     const toolCallHtml = `<div class="tool-call"><strong>🔧 TOOL CALL:</strong> ${this.escapeHtml(toolName)}</div>`;
                     this.appendHtmlToStream(toolCallHtml);
                 } else if (event.type === 'tool_output') {
-                    // Filter out agent transfer messages - they're internal and not user-facing
-                    if (this.isAgentTransferOutput(event.content)) {
-                        // Skip agent transfer outputs - they're just routing messages
-                        return;
-                    }
-
                     // Show tool outputs (especially for SQL queries with tables)
                     const outputContent = this.tryRenderTable(event.content);
                     if (outputContent) {
