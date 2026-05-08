@@ -1,4 +1,4 @@
 """
 Utility modules for sequence-to-function service
-Contains database services, embedding utilities, startup functions, and helper modules
+Contains database services, startup functions, and helper modules.
 """

@@ -25,19 +25,20 @@ from tools.schemas import (
     ExecuteSQLQueryInput,
     ExecuteSQLQueryOutput,
     FetchArticleContentInput,
+    FindArticleRecordsInput,
+    FindArticleRecordsOutput,
+    FindGeneRecordsInput,
+    FindGeneRecordsOutput,
     GetUniProtIdInput,
     GetUniProtIdOutput,
     SaveSequenceDataInput,
     SaveSequenceDataOutput,
-    SemanticSearchInput,
-    SemanticSearchOutput,
     VisionMediaInput,
     VisionMediaOutput,
     WebSearchInput,
     WebSearchOutput,
 )
 from tools.tool_wrappers import add_output_schema_to_docstring, flatten_params_from_signature
-from utils.app_context import get_embedding_service
 from utils.database_service import DatabaseService
 
 
@@ -55,8 +56,6 @@ def _jsonable(value: Any) -> Any:
 def _row_to_dict(columns: list[str], row: Any) -> dict[str, Any]:
     row_dict: dict[str, Any] = {}
     for index, column in enumerate(columns):
-        if column.lower() == "embedding":
-            continue
         row_dict[column] = _jsonable(row[index])
     return row_dict
 
@@ -177,7 +176,7 @@ class STFTools:
     @add_output_schema_to_docstring
     @flatten_params_from_signature
     async def save_to_database(params: SaveSequenceDataInput) -> SaveSequenceDataOutput:
-        """Save extracted sequence-function data to PostgreSQL."""
+        """Save extracted sequence-function data to the database."""
 
         logger.info("save_to_database called for gene: %s", params.gene)
         try:
@@ -514,122 +513,104 @@ Return JSON that matches the requested schema.
     @function_tool
     @add_output_schema_to_docstring
     @flatten_params_from_signature
-    async def semantic_search(params: SemanticSearchInput) -> SemanticSearchOutput:
-        """Perform semantic search on sequence_data using vector similarity."""
-
-        logger.info(
-            "Semantic search query: %s... (limit: %s, min_similarity: %s)",
-            params.query[:100],
-            params.limit,
-            params.min_similarity,
-        )
-
-        embedding_service = get_embedding_service()
-        if not embedding_service:
-            error = "Embedding service not available. Cannot perform semantic search."
-            logger.error(error)
-            return SemanticSearchOutput(
-                success=False,
-                query=params.query,
-                min_similarity=params.min_similarity,
-                results=[],
-                result_count=0,
-                message=error,
-                error=error,
-            )
+    async def find_article_records(params: FindArticleRecordsInput) -> FindArticleRecordsOutput:
+        """Check whether an article URL already has parsed sequence_data records."""
 
         try:
-            logger.info("Generating embedding for query...")
-            query_embedding = await embedding_service.generate_embedding(params.query)
-            if not query_embedding:
-                error = "Failed to generate embedding for the query."
-                logger.error(error)
-                return SemanticSearchOutput(
-                    success=False,
-                    query=params.query,
-                    min_similarity=params.min_similarity,
-                    results=[],
-                    result_count=0,
-                    message=error,
-                    error=error,
-                )
-
-            logger.info("Executing vector similarity search in PostgreSQL...")
             async for db_session in get_db():
-                sql_query = text(
-                    """
-                    SELECT
-                        id,
-                        gene,
-                        protein_uniprot_id,
-                        modification_type,
-                        interval,
-                        function,
-                        effect,
-                        is_longevity_related,
-                        longevity_association,
-                        citations,
-                        article_url,
-                        1 - (embedding <=> :query_embedding) as similarity
-                    FROM sequence_data
-                    WHERE embedding IS NOT NULL
-                        AND (1 - (embedding <=> :query_embedding)) >= :min_similarity
-                    ORDER BY embedding <=> :query_embedding
-                    LIMIT :limit
-                    """
+                results = await DatabaseService.find_by_article_url(
+                    db_session=db_session,
+                    article_url=params.article_url,
+                    limit=params.limit,
                 )
-                result = await db_session.execute(
-                    sql_query,
-                    {
-                        "query_embedding": str(query_embedding),
-                        "limit": params.limit,
-                        "min_similarity": params.min_similarity,
-                    },
-                )
-                rows = result.fetchall()
-                columns = list(result.keys())
-                results = []
-                for row in rows:
-                    row_dict = _row_to_dict(columns, row)
-                    if "similarity" in row_dict and row_dict["similarity"] is not None:
-                        row_dict["similarity"] = round(float(row_dict["similarity"]), 4)
-                    results.append(row_dict)
-
-                if not results:
-                    message = (
-                        f"No results found with similarity >= {params.min_similarity}. "
-                        "Try lowering min_similarity or check whether records have embeddings."
-                    )
-                else:
-                    message = f"Semantic search returned {len(results)} results."
-
-                return SemanticSearchOutput(
+                exists = bool(results)
+                return FindArticleRecordsOutput(
                     success=True,
-                    query=params.query,
-                    min_similarity=params.min_similarity,
+                    article_url=params.article_url,
+                    exists=exists,
                     results=results,
                     result_count=len(results),
-                    message=message,
+                    message=(
+                        f"Found {len(results)} existing records for article URL."
+                        if exists
+                        else "No existing records found for article URL."
+                    ),
                 )
         except Exception as exc:
-            logger.error("Semantic search failed: %s", exc)
-            return SemanticSearchOutput(
+            logger.error("Article URL lookup failed: %s", exc)
+            return FindArticleRecordsOutput(
                 success=False,
-                query=params.query,
-                min_similarity=params.min_similarity,
+                article_url=params.article_url,
+                exists=False,
                 results=[],
                 result_count=0,
-                message="Semantic search failed.",
+                message="Article URL lookup failed.",
                 error=str(exc),
             )
 
-        return SemanticSearchOutput(
+        return FindArticleRecordsOutput(
             success=False,
-            query=params.query,
-            min_similarity=params.min_similarity,
+            article_url=params.article_url,
+            exists=False,
             results=[],
             result_count=0,
-            message="Semantic search failed.",
+            message="Article URL lookup failed.",
+            error="Database session was not available.",
+        )
+
+    @staticmethod
+    @function_tool
+    @add_output_schema_to_docstring
+    @flatten_params_from_signature
+    async def find_gene_records(params: FindGeneRecordsInput) -> FindGeneRecordsOutput:
+        """Find sequence_data records by gene name or UniProt ID."""
+
+        if not params.gene and not params.protein_uniprot_id:
+            return FindGeneRecordsOutput(
+                success=False,
+                gene=params.gene,
+                protein_uniprot_id=params.protein_uniprot_id,
+                results=[],
+                result_count=0,
+                message="Provide at least one of gene or protein_uniprot_id.",
+                error="Missing lookup key.",
+            )
+
+        try:
+            async for db_session in get_db():
+                results = await DatabaseService.find_by_gene_or_uniprot(
+                    db_session=db_session,
+                    gene=params.gene,
+                    protein_uniprot_id=params.protein_uniprot_id,
+                    limit=params.limit,
+                )
+                return FindGeneRecordsOutput(
+                    success=True,
+                    gene=params.gene,
+                    protein_uniprot_id=params.protein_uniprot_id,
+                    results=results,
+                    result_count=len(results),
+                    message=f"Found {len(results)} matching records.",
+                )
+        except Exception as exc:
+            logger.error("Gene lookup failed: %s", exc)
+            return FindGeneRecordsOutput(
+                success=False,
+                gene=params.gene,
+                protein_uniprot_id=params.protein_uniprot_id,
+                results=[],
+                result_count=0,
+                message="Gene lookup failed.",
+                error=str(exc),
+            )
+
+        return FindGeneRecordsOutput(
+            success=False,
+            gene=params.gene,
+            protein_uniprot_id=params.protein_uniprot_id,
+            results=[],
+            result_count=0,
+            message="Gene lookup failed.",
             error="Database session was not available.",
         )
 
@@ -640,4 +621,5 @@ fetch_article_content = STFTools.fetch_article_content
 web_search = STFTools.web_search
 vision_media = STFTools.vision_media
 execute_sql_query = STFTools.execute_sql_query
-semantic_search = STFTools.semantic_search
+find_article_records = STFTools.find_article_records
+find_gene_records = STFTools.find_gene_records

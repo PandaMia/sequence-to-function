@@ -5,10 +5,9 @@ uvicorn[standard]
 requests
 beautifulsoup4
 pydantic
-asyncpg
+aiosqlite
 sqlalchemy[asyncio]
 aiohttp
 pandas
 mygene
-pgvector
 python-dotenv

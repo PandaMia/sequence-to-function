@@ -7,9 +7,10 @@ from stf_agents.base import BaseSTFAgent
 from tools.stf_tools import (
     execute_sql_query,
     fetch_article_content,
+    find_article_records,
+    find_gene_records,
     get_uniprot_id,
     save_to_database,
-    semantic_search,
     vision_media,
     web_search,
 )
@@ -27,9 +28,10 @@ class STFAgent(BaseSTFAgent):
                 fetch_article_content,
                 web_search,
                 get_uniprot_id,
+                find_article_records,
+                find_gene_records,
                 save_to_database,
                 execute_sql_query,
-                semantic_search,
                 vision_media,
             ],
         )

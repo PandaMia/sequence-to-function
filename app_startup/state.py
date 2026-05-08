@@ -6,9 +6,8 @@ from typing import Optional
 from pydantic import BaseModel
 from openai import AsyncOpenAI, DefaultAioHttpClient
 
-from utils.embeddings import EmbeddingService
 from utils.sqlite_utils import ensure_db_folder_exists
-from utils.postgres_utils import initialize_postgres
+from utils.database_utils import initialize_database
 from utils.app_context import set_app_state_context
 
 logger = logging.getLogger(__name__)
@@ -18,7 +17,6 @@ class AppState(BaseModel):
     """FastAPI application state."""
 
     openai_client: AsyncOpenAI
-    embedding_service: EmbeddingService
     port: int
 
     class Config:
@@ -56,22 +54,16 @@ class AppStateManager:
             http_client=DefaultAioHttpClient(),
         )
 
-        # Initialize embedding service
-        embedding_service = EmbeddingService(openai_client)
-        logger.info("Embedding service initialized")
-
-        # Set initial app state context for database operations
-        temp_app_state = type('obj', (object,), {'embedding_service': embedding_service})()
+        # Set initial app state context for tools that need shared services.
+        temp_app_state = type("obj", (object,), {"openai_client": openai_client})()
         set_app_state_context(temp_app_state)
 
-        # Initialize Postgres database
-        await initialize_postgres()
-        logger.info("PostgreSQL database initialized")
+        await initialize_database()
+        logger.info("Database initialized")
 
         # Create app state
         self._state = AppState(
             openai_client=openai_client,
-            embedding_service=embedding_service,
             port=int(os.getenv("PORT", 8080)),
         )
 

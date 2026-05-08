@@ -5,10 +5,9 @@ An agent-based system for generating a knowledge base from all publicly availabl
 ## How to Run the Service
 
 ### Prerequisites
-- Docker and Docker Compose installed
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) package manager (fast Python package installer)
-- OpenAI API key (for embeddings and AI agents)
+- OpenAI API key
 
 **Install uv:**
 ```bash
@@ -24,57 +23,18 @@ pip install uv
 
 ### Setup Instructions
 
-#### 1. Start PostgreSQL Database
-The service uses PostgreSQL with pgvector extension for semantic search capabilities.
-
-**Option A: Using Docker (Recommended)**
-```bash
-# Start PostgreSQL container with pgvector extension
-docker compose up -d postgres
-
-# Verify container is running
-docker compose ps
-```
-
-**Option B: Local PostgreSQL Installation**
-If you prefer running PostgreSQL locally, you need PostgreSQL 16+ with pgvector:
-
-```bash
-# Install PostgreSQL 16
-brew install postgresql@16
-
-# Start PostgreSQL service
-brew services start postgresql@16
-
-# Add to PATH (add this to ~/.zshrc for permanent setup)
-export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
-
-# Install pgvector extension
-git clone --branch v0.8.1 https://github.com/pgvector/pgvector.git /tmp/pgvector
-cd /tmp/pgvector
-make
-make install
-
-# Create database and user
-createdb sequence_function_db
-createuser -s postgres
-
-# Enable vector extension
-psql -U postgres -d sequence_function_db -c "CREATE EXTENSION IF NOT EXISTS vector;"
-```
-
-#### 2. Environment Configuration
+#### 1. Environment Configuration
 Set up your environment variables:
 
 ```bash
-# Required: OpenAI API key for embeddings and AI functionality
+# Required: OpenAI API key for agent functionality
 export OPENAI_API_KEY="your-openai-api-key"
 
-# Optional: Database URL (defaults to local PostgreSQL)
-export DATABASE_URL="postgresql+asyncpg://postgres:password@localhost:5432/sequence_function_db"
+# Optional: Database URL (defaults to a local SQLite file)
+export DATABASE_URL="sqlite+aiosqlite:///databases/sequence_function.db"
 ```
 
-#### 3. Install Python Dependencies
+#### 2. Install Python Dependencies
 ```bash
 # Install dependencies using uv (creates virtual environment automatically)
 uv sync
@@ -83,7 +43,7 @@ uv sync
 uv pip install -r requirements.txt
 ```
 
-#### 4. Start the Application
+#### 3. Start the Application
 ```bash
 # Run the FastAPI application using uv
 uv run uvicorn app:app --host 0.0.0.0 --port 8080
@@ -101,16 +61,14 @@ The service will be available at:
 ### Database Initialization
 
 On first startup, the application will:
-1. Create necessary database tables with pgvector extension
-2. Import existing data from `data/sequence_data.csv` if present  
-3. Generate embeddings for semantic search functionality
-4. Set up vector similarity search indices
+1. Create the SQLite database file at `databases/sequence_function.db`
+2. Create the `sequence_data` table
+3. Import existing data from `data/sequence_data.csv` if the database is empty
 
 ### Service Features
 
 - **Article Parsing**: Extract sequence-function data from research papers
-- **Vision Parcing**: AI-powered analysis of scientific figures, tables, and supplementary materials to extract sequence data not available in text
-- **Data Retrieval**: Query database with SQL and semantic search
+- **Vision Parsing**: AI-powered analysis of scientific figures, tables, and supplementary materials to extract sequence data not available in text
+- **Data Retrieval**: Query database by article URL, gene, UniProt ID, or read-only SQL
 - **Article Writing**: Generate research content from stored data
 - **Chat Interface**: Interactive UI for all agent capabilities
-- **Semantic Search**: Vector-based similarity search using embeddings

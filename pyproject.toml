@@ -5,19 +5,18 @@ description = "An agent-based system for generating a knowledge base from all pu
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "openai-agents[litellm]==0.4.1",
-    "openai[aiohttp]",
+    "openai-agents[litellm]==0.14.1",
+    "openai[aiohttp]==2.32.0",
     "fastapi",
     "uvicorn[standard]",
     "requests",
     "beautifulsoup4",
     "pydantic",
-    "asyncpg",
+    "aiosqlite",
     "sqlalchemy[asyncio]",
     "aiohttp",
     "pandas",
     "mygene",
-    "pgvector",
     "python-dotenv",
 ]
 

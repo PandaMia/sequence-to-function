@@ -1,42 +1,42 @@
 import os
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, Boolean, text as sql_text
-from pgvector.sqlalchemy import Vector
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import AsyncGenerator
 
+from sqlalchemy import Boolean, Column, DateTime, Integer, JSON, String, Text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-class Base(DeclarativeBase):
-    pass
+
+Base = declarative_base()
 
 
 class SequenceData(Base):
     __tablename__ = "sequence_data"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    gene = Column(String(100), nullable=False, index=True)  # Gene name only (e.g., NFE2L2)
-    protein_uniprot_id = Column(String(20), index=True)  # UniProt ID (e.g., Q16236)
-    modification_type = Column(String(100))  # Type of modification (deletion, substitution, etc.)
-    interval = Column(String(100))  # Format: "AA 76–93" (amino acid positions)
-    function = Column(Text)  # Function description
-    effect = Column(Text)  # Effect of the modification
-    is_longevity_related = Column(Boolean, default=False, index=True)  # Boolean flag for longevity relation
-    longevity_association = Column(Text)  # Description of aging/longevity relevance
-    citations = Column(JSON)  # Array of citation strings
-    article_url = Column(Text)
+    gene = Column(String(100), nullable=False, index=True)
+    protein_uniprot_id = Column(String(20), index=True)
+    modification_type = Column(String(100))
+    interval = Column(String(100))
+    function = Column(Text)
+    effect = Column(Text)
+    is_longevity_related = Column(Boolean, default=False, index=True)
+    longevity_association = Column(Text)
+    citations = Column(JSON)
+    article_url = Column(Text, index=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    embedding = Column(Vector(1536))
 
 
-# Database configuration
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql+asyncpg://postgres:password@localhost:5432/sequence_function_db"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///databases/sequence_function.db")
+
+if DATABASE_URL.startswith("sqlite"):
+    db_path = DATABASE_URL.removeprefix("sqlite+aiosqlite:///")
+    if db_path and db_path != ":memory:":
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
 engine = create_async_engine(DATABASE_URL, echo=False)
-AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -47,13 +47,6 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-async def create_tables():
+async def create_tables() -> None:
     async with engine.begin() as conn:
-        # Enable pgvector extension
-        await conn.execute(sql_text("CREATE EXTENSION IF NOT EXISTS vector"))
-        # Create tables
         await conn.run_sync(Base.metadata.create_all)
-        # Create index for vector similarity search using cosine distance
-        await conn.execute(sql_text(
-            "CREATE INDEX IF NOT EXISTS sequence_data_embedding_idx ON sequence_data USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
-        ))

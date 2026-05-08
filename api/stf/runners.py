@@ -42,7 +42,7 @@ async def run_stf_agent_stream(
     yield json_event("start", {"status": "started", "session_id": session_id})
 
     try:
-        # Set app state context for tools to access embedding service
+        # Set app state context for tools to access shared services
         set_app_state_context(app_state)
 
         logger.debug(

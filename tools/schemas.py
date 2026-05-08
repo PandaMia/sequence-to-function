@@ -103,17 +103,32 @@ class ExecuteSQLQueryOutput(BaseModel):
     error: Optional[str] = Field(default=None, description="Query error, if any.")
 
 
-class SemanticSearchInput(BaseModel):
-    query: str = Field(..., description="Natural language search query.")
-    limit: int = Field(default=5, ge=1, le=20, description="Maximum number of results.")
-    min_similarity: float = Field(default=0.5, ge=0.0, le=1.0, description="Minimum similarity threshold.")
+class FindArticleRecordsInput(BaseModel):
+    article_url: str = Field(..., description="Article URL to check for existing parsed records.")
+    limit: int = Field(default=100, ge=1, le=500, description="Maximum number of records to return.")
 
 
-class SemanticSearchOutput(BaseModel):
-    success: bool = Field(..., description="True when semantic search executed successfully.")
-    query: str = Field(..., description="Search query that was executed.")
-    min_similarity: float = Field(..., description="Similarity threshold used for the search.")
-    results: list[dict[str, Any]] = Field(default_factory=list, description="Matching sequence_data rows.")
-    result_count: int = Field(default=0, description="Number of matching rows.")
+class FindArticleRecordsOutput(BaseModel):
+    success: bool = Field(..., description="True when the lookup executed successfully.")
+    article_url: str = Field(..., description="Article URL that was checked.")
+    exists: bool = Field(..., description="True when records already exist for this URL.")
+    results: list[dict[str, Any]] = Field(default_factory=list, description="Existing sequence_data rows for this URL.")
+    result_count: int = Field(default=0, description="Number of existing records.")
     message: str = Field(default="", description="Human-readable result message.")
-    error: Optional[str] = Field(default=None, description="Search error, if any.")
+    error: Optional[str] = Field(default=None, description="Lookup error, if any.")
+
+
+class FindGeneRecordsInput(BaseModel):
+    gene: Optional[str] = Field(default=None, description="Gene symbol to search for.")
+    protein_uniprot_id: Optional[str] = Field(default=None, description="UniProt ID to search for.")
+    limit: int = Field(default=100, ge=1, le=500, description="Maximum number of records to return.")
+
+
+class FindGeneRecordsOutput(BaseModel):
+    success: bool = Field(..., description="True when the lookup executed successfully.")
+    gene: Optional[str] = Field(default=None, description="Gene symbol that was searched.")
+    protein_uniprot_id: Optional[str] = Field(default=None, description="UniProt ID that was searched.")
+    results: list[dict[str, Any]] = Field(default_factory=list, description="Matching sequence_data rows.")
+    result_count: int = Field(default=0, description="Number of matching records.")
+    message: str = Field(default="", description="Human-readable result message.")
+    error: Optional[str] = Field(default=None, description="Lookup error, if any.")
