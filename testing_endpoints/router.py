@@ -56,12 +56,13 @@ def get_testing_router(app_state_getter: Callable[[], AppState]) -> APIRouter:
         """
         try:            
             async for db_session in get_db():
-                await db_session.execute(text("DROP TABLE IF EXISTS sequence_data CASCADE"))
+                await db_session.execute(text("DROP TABLE IF EXISTS sequence_data"))
+                await db_session.execute(text("DROP TABLE IF EXISTS articles"))
                 await db_session.commit()
                 
                 return {
                     "status": "success",
-                    "message": "sequence_data table deleted successfully"
+                    "message": "sequence_data and articles tables deleted successfully"
                 }
                 
         except Exception as e:

@@ -39,6 +39,7 @@ class SaveSequenceDataInput(BaseModel):
     longevity_association: str = Field(default="", description="Evidence-backed aging or longevity association.")
     citations: list[ToolCitation] = Field(default_factory=list, description="Source citations.")
     article_url: str = Field(default="", description="Source article URL.")
+    article_text: str = Field(default="", description="Full source article text when available.")
 
 
 class SaveSequenceDataOutput(BaseModel):
@@ -91,7 +92,7 @@ class VisionMediaOutput(BaseModel):
 
 
 class ExecuteSQLQueryInput(BaseModel):
-    query: str = Field(..., description="Read-only SELECT query against the sequence_data table.")
+    query: str = Field(..., description="Read-only SELECT query against the STF database tables.")
 
 
 class ExecuteSQLQueryOutput(BaseModel):
@@ -112,7 +113,7 @@ class FindArticleRecordsOutput(BaseModel):
     success: bool = Field(..., description="True when the lookup executed successfully.")
     article_url: str = Field(..., description="Article URL that was checked.")
     exists: bool = Field(..., description="True when records already exist for this URL.")
-    results: list[dict[str, Any]] = Field(default_factory=list, description="Existing sequence_data rows for this URL.")
+    results: list[dict[str, Any]] = Field(default_factory=list, description="Existing sequence_data rows joined with article_url and article_text.")
     result_count: int = Field(default=0, description="Number of existing records.")
     message: str = Field(default="", description="Human-readable result message.")
     error: Optional[str] = Field(default=None, description="Lookup error, if any.")
@@ -128,7 +129,7 @@ class FindGeneRecordsOutput(BaseModel):
     success: bool = Field(..., description="True when the lookup executed successfully.")
     gene: Optional[str] = Field(default=None, description="Gene symbol that was searched.")
     protein_uniprot_id: Optional[str] = Field(default=None, description="UniProt ID that was searched.")
-    results: list[dict[str, Any]] = Field(default_factory=list, description="Matching sequence_data rows.")
+    results: list[dict[str, Any]] = Field(default_factory=list, description="Matching sequence_data rows joined with article_url and article_text.")
     result_count: int = Field(default=0, description="Number of matching records.")
     message: str = Field(default="", description="Human-readable result message.")
     error: Optional[str] = Field(default=None, description="Lookup error, if any.")

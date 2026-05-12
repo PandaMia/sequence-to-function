@@ -22,6 +22,7 @@ DEFAULT_STF_MODEL_SETTINGS: dict[str, TaskModelConfig] = {
 # CSV file structure configuration
 CSV_HEADERS = [
     "id",
+    "article_id",
     "gene",
     "protein_uniprot_id",
     "modification_type",
@@ -31,8 +32,16 @@ CSV_HEADERS = [
     "is_longevity_related",
     "longevity_association",
     "citations",
-    "article_url",
     "created_at",
 ]
 
+ARTICLE_CSV_HEADERS = [
+    "id",
+    "url",
+    "article_text",
+    "created_at",
+    "updated_at",
+]
+
 CSV_FILE_PATH = "data/sequence_data.csv"
+ARTICLE_CSV_FILE_PATH = "data/articles.csv"

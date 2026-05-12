@@ -62,8 +62,9 @@ The service will be available at:
 
 On first startup, the application will:
 1. Create the SQLite database file at `databases/sequence_function.db`
-2. Create the `sequence_data` table
-3. Import existing data from `data/sequence_data.csv` if the database is empty
+2. Create normalized `articles` and `sequence_data` tables
+3. Import missing articles from `data/articles.csv` and missing sequence records from `data/sequence_data.csv` on every startup
+4. Store full article text once in `articles.full_text` and `data/articles.csv`; `data/sequence_data.csv` references articles by `article_id`
 
 ### Service Features
 
