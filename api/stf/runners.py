@@ -16,7 +16,7 @@ from runner.stream import run_agent_stream
 from utils.create_config import create_stf_run_config
 from utils.sse import json_event
 from utils.sqlite_utils import get_db_path
-from utils.app_context import set_app_state_context
+from utils.app_context import set_app_state_context, set_session_id_context
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +41,22 @@ async def run_stf_agent_stream(
 
     yield json_event("start", {"status": "started", "session_id": session_id})
 
+    run_slot_acquired = await app_state.usage_limiter.try_acquire_run_slot()
+    if not run_slot_acquired:
+        yield json_event(
+            "error",
+            {
+                "session_id": session_id,
+                "message": "Too many requests are running right now. Try again shortly.",
+            },
+        )
+        yield json_event("done", {"session_id": session_id})
+        return
+
     try:
         # Set app state context for tools to access shared services
         set_app_state_context(app_state)
+        set_session_id_context(session_id)
 
         logger.debug(
             f"Starting STF agent - session_id: {session_id}, model: {request.stf_model.model_name}"
@@ -123,3 +136,5 @@ async def run_stf_agent_stream(
         logger.error(f"Run STF agent stream error - session_id: {session_id}, error: {error_msg}")
         yield json_event("error", {"session_id": session_id, "message": error_msg})
         yield json_event("done", {"session_id": session_id})
+    finally:
+        app_state.usage_limiter.release_run_slot()

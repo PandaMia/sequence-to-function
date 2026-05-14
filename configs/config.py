@@ -1,4 +1,6 @@
+import os
 from typing import TypedDict
+
 from agents import ModelSettings
 from openai.types.shared import Reasoning
 from configs.types import ModelName
@@ -9,11 +11,19 @@ class TaskModelConfig(TypedDict):
     model_settings: ModelSettings
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
 DEFAULT_STF_MODEL_SETTINGS: dict[str, TaskModelConfig] = {
-    "model_name": "gpt-5",
+    "model_name": os.getenv("STF_DEFAULT_MODEL", "gpt-5.4-nano"),
     "model_settings": ModelSettings(
-        reasoning=Reasoning(effort="high", summary="auto"),
+        reasoning=Reasoning(effort=os.getenv("STF_REASONING_EFFORT", "low"), summary="auto"),
         verbosity="low",
+        max_tokens=_env_int("STF_MAX_OUTPUT_TOKENS", 4096),
         response_include=["reasoning.encrypted_content"],
         truncation="auto",
     ),

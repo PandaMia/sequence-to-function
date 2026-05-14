@@ -1,14 +1,56 @@
 import json
 import logging
 import asyncio
-from typing import AsyncIterator, Optional
-from unittest import result
+import os
+from typing import Any, AsyncIterator, Optional
+
 from agents import Agent, Runner, RunConfig, SQLiteSession
 from agents.items import TResponseInputItem
 from pydantic import BaseModel
 
 
 logger = logging.getLogger(__name__)
+
+
+def _max_agent_turns() -> int:
+    try:
+        return int(os.getenv("STF_MAX_AGENT_TURNS", "25"))
+    except ValueError:
+        return 25
+
+
+def _final_response_payload(final_obj: Any) -> dict[str, Any] | list[Any]:
+    if isinstance(final_obj, BaseModel):
+        final_obj = final_obj.model_dump()
+
+    if final_obj is None:
+        return {
+            "message": "Task execution completed",
+            "message_format": "markdown",
+        }
+
+    if isinstance(final_obj, str):
+        return {
+            "message": final_obj,
+            "message_format": "markdown",
+        }
+
+    if isinstance(final_obj, dict):
+        if "message" in final_obj:
+            return {
+                **final_obj,
+                "message": str(final_obj["message"]),
+                "message_format": final_obj.get("message_format", "markdown"),
+            }
+        return final_obj
+
+    if isinstance(final_obj, list):
+        return final_obj
+
+    return {
+        "message": str(final_obj),
+        "message_format": "markdown",
+    }
 
 
 async def run_agent_stream(
@@ -41,7 +83,7 @@ async def run_agent_stream(
             input=initial_input,
             session=sql_session,
             run_config=run_config,
-            max_turns=100,
+            max_turns=_max_agent_turns(),
         )
 
         # Track state for event handling
@@ -163,14 +205,7 @@ async def run_agent_stream(
         # Send final response (agent's natural completion)
         
 
-        if isinstance(final_obj, BaseModel):
-            final_payload = final_obj.model_dump()
-        elif isinstance(final_obj, (dict, list)):
-            final_payload = final_obj
-        elif final_obj is None:
-            final_payload = {"message": "Task execution completed"}
-        else:
-            final_payload = {"message": str(final_obj)}
+        final_payload = _final_response_payload(final_obj)
 
         event_data = {
             'type': 'final_response',

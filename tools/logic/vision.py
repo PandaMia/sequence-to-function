@@ -25,7 +25,7 @@ def vision_media_logic(params: VisionMediaInput) -> VisionMediaOutput:
         return VisionMediaOutput(notes=[])
 
     try:
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = OpenAI(api_key=os.getenv("OPENAIOPENAI_KEY_API_KEY"))
         system_prompt = """
 You are a scientific figure analyst. For each provided image or PDF:
 1. Classify the media type.
@@ -67,7 +67,7 @@ Return JSON that matches the requested schema.
             return VisionMediaOutput(notes=[])
 
         response = client.responses.create(
-            model=os.getenv("STF_VISION_MODEL", "gpt-5-mini"),
+            model=os.getenv("STF_VISION_MODEL", "gpt-5.4-nano"),
             input=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": parts},

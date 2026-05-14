@@ -397,6 +397,25 @@
             line-height: 1.6;
         }
 
+        .bot-message ul,
+        .bot-message ol {
+            margin: 0.75rem 0;
+            padding-left: 2rem;
+            list-style-position: outside;
+            max-width: 100%;
+        }
+
+        .bot-message li {
+            padding-left: 0.25rem;
+            line-height: 1.6;
+            overflow-wrap: anywhere;
+        }
+
+        .bot-message a {
+            color: #88ff88;
+            overflow-wrap: anywhere;
+        }
+
         .bot-message code {
             background: rgba(0, 50, 0, 0.8);
             padding: 0.2rem 0.4rem;
@@ -404,6 +423,8 @@
             border-radius: 2px;
             font-family: 'Courier Prime', monospace;
             color: #00ff00;
+            white-space: normal;
+            overflow-wrap: anywhere;
         }
 
         .bot-message pre {
@@ -517,9 +538,48 @@
             border: 1px solid #00ff00;
             padding: 1rem;
             margin: 0.5rem 0;
-            white-space: pre-wrap;
+            max-width: 100%;
+            white-space: normal;
             word-wrap: break-word;
             overflow-wrap: break-word;
+            overflow-x: auto;
+        }
+
+        .quick-replies {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid #004400;
+        }
+
+        .quick-reply-button {
+            padding: 0.55rem 0.75rem;
+            background: rgba(0, 40, 0, 0.95);
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            cursor: pointer;
+            font-family: 'Courier Prime', monospace;
+            font-size: 0.9rem;
+            line-height: 1.3;
+            text-align: left;
+            max-width: 100%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .quick-reply-button:hover:not(:disabled) {
+            background: rgba(0, 80, 0, 0.95);
+            box-shadow: 0 0 12px rgba(0, 255, 0, 0.45);
+            text-shadow: 0 0 5px #00ff00;
+        }
+
+        .quick-reply-button:disabled {
+            color: #004400;
+            border-color: #004400;
+            cursor: not-allowed;
+            box-shadow: none;
         }
 
         .tool-call {
@@ -640,6 +700,17 @@
                         this.sendMessage();
                     }
                 });
+
+                this.messagesContainer.addEventListener('click', (e) => {
+                    const quickReplyButton = e.target.closest('.quick-reply-button');
+                    if (!quickReplyButton) {
+                        return;
+                    }
+                    e.preventDefault();
+                    const reply = quickReplyButton.dataset.reply || '';
+                    this.disableQuickReplies(quickReplyButton.closest('.quick-replies'));
+                    this.sendQuickReply(reply);
+                });
                 
                 // Test button functionality
                 console.log('Adding test click handler...');
@@ -670,6 +741,11 @@
             }
 
             renderMarkdown(content) {
+                const markdownMessage = this.extractMarkdownMessage(content);
+                if (markdownMessage !== null) {
+                    return this.renderMarkdownOnly(markdownMessage);
+                }
+
                 // If content is an object, convert to JSON string first
                 if (typeof content === 'object' && content !== null) {
                     content = JSON.stringify(content, null, 2);
@@ -684,6 +760,105 @@
                 // Otherwise render as markdown
                 const rawHtml = marked.parse(content);
                 return DOMPurify.sanitize(rawHtml);
+            }
+
+            extractMarkdownMessage(content) {
+                if (
+                    content &&
+                    typeof content === 'object' &&
+                    typeof content.message === 'string' &&
+                    (!content.message_format || content.message_format === 'markdown')
+                ) {
+                    return content.message;
+                }
+
+                if (typeof content === 'string') {
+                    try {
+                        const parsed = JSON.parse(content);
+                        if (
+                            parsed &&
+                            typeof parsed === 'object' &&
+                            typeof parsed.message === 'string' &&
+                            (!parsed.message_format || parsed.message_format === 'markdown')
+                        ) {
+                            return parsed.message;
+                        }
+                    } catch (e) {
+                        // Not a JSON-wrapped markdown message.
+                    }
+                }
+
+                return null;
+            }
+
+            renderMarkdownOnly(content) {
+                if (typeof content !== 'string') {
+                    content = JSON.stringify(content, null, 2);
+                }
+                const rawHtml = marked.parse(content);
+                return DOMPurify.sanitize(rawHtml);
+            }
+
+            extractQuickReplyOptions(content) {
+                if (typeof content !== 'string') {
+                    return [];
+                }
+
+                const options = [];
+                const seen = new Set();
+                const lines = content.split(/\r?\n/);
+                const hasClarificationCue = /\b(reply with|choose|select)\b.*\b(option|number|letter|a,\s*b|a\/b)|\bwhich option\b/i.test(content);
+
+                for (const line of lines) {
+                    const cleanLine = line
+                        .trim()
+                        .replace(/^[-*]\s+/, '')
+                        .replace(/[*_`]/g, '');
+                    const optionMatch = cleanLine.match(/^Option\s+([A-Za-z0-9]+)\s*[:.)-]\s*(.+)$/i);
+                    const numberedMatch = hasClarificationCue ? cleanLine.match(/^(\d+)\s*[:.)-]\s*(.+)$/) : null;
+                    const match = optionMatch || numberedMatch;
+                    if (!match) {
+                        continue;
+                    }
+
+                    const value = optionMatch
+                        ? match[1].toUpperCase()
+                        : String.fromCharCode(64 + Number(match[1]));
+                    if (seen.has(value)) {
+                        continue;
+                    }
+                    seen.add(value);
+
+                    const text = match[2]
+                        .trim()
+                        .replace(/^["“”']+|["“”']+$/g, '');
+                    options.push({
+                        value,
+                        text,
+                        label: `${value}: ${text}`,
+                    });
+
+                    if (options.length >= 8) {
+                        break;
+                    }
+                }
+
+                return options;
+            }
+
+            renderQuickReplies(content) {
+                const options = this.extractQuickReplyOptions(content);
+                if (options.length === 0) {
+                    return '';
+                }
+
+                const buttons = options.map((option) => {
+                    const value = this.escapeHtml(option.value);
+                    const label = this.escapeHtml(option.label);
+                    return `<button type="button" class="quick-reply-button" data-reply="${value}">${label}</button>`;
+                }).join('');
+
+                return `<div class="quick-replies">${buttons}</div>`;
             }
 
             tryRenderTable(content) {
@@ -857,6 +1032,23 @@
                 }
             }
 
+            sendQuickReply(reply) {
+                if (!reply || this.sendButton.disabled) {
+                    return;
+                }
+                this.messageInput.value = reply;
+                this.sendMessage();
+            }
+
+            disableQuickReplies(container) {
+                if (!container) {
+                    return;
+                }
+                container.querySelectorAll('.quick-reply-button').forEach((button) => {
+                    button.disabled = true;
+                });
+            }
+
             async streamResponse(userMessage) {
                 const url = `/stf/extract?session-id=${encodeURIComponent(this.sessionId)}`;
                 
@@ -927,6 +1119,14 @@
 
             handleStreamEvent(event) {
                 if (event.type === 'final_response') {
+                    const markdownMessage = this.extractMarkdownMessage(event.content);
+                    if (markdownMessage !== null) {
+                        const renderedContent = this.renderMarkdownOnly(markdownMessage);
+                        const quickReplies = this.renderQuickReplies(markdownMessage);
+                        this.appendHtmlToStream(`<div class="final-response markdown-response">${renderedContent}${quickReplies}</div>`);
+                        return;
+                    }
+
                     // Check if content is a ParsingOutput structure (has summary and genes)
                     if (event.content && typeof event.content === 'object' && 'summary' in event.content && 'genes' in event.content) {
                         // For ParsingOutput: keep the table from tool output visible, only add summary

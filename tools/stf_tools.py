@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from agents import function_tool
 
-from tools.logic.article import fetch_article_content_logic, web_search_logic
+from tools.logic.article import fetch_article_content_logic, search_literature_logic, web_search_logic
 from tools.logic.database import (
     execute_sql_query_logic,
     find_article_records_logic,
@@ -24,6 +24,8 @@ from tools.schemas import (
     FindGeneRecordsOutput,
     GetUniProtIdInput,
     GetUniProtIdOutput,
+    LiteratureSearchInput,
+    LiteratureSearchOutput,
     SaveSequenceDataInput,
     SaveSequenceDataOutput,
     VisionMediaInput,
@@ -71,11 +73,21 @@ class STFTools:
     @function_tool
     @add_output_schema_to_docstring
     @flatten_params_from_signature
-    def web_search(params: WebSearchInput) -> WebSearchOutput:
+    async def web_search(params: WebSearchInput) -> WebSearchOutput:
         """Search the web for article content or supporting source material."""
 
-        result = web_search_logic(params)
+        result = await web_search_logic(params)
         return WebSearchOutput(**result.model_dump())
+
+    @staticmethod
+    @function_tool
+    @add_output_schema_to_docstring
+    @flatten_params_from_signature
+    async def search_literature(params: LiteratureSearchInput) -> LiteratureSearchOutput:
+        """Search public sources for candidate article URLs about a gene or protein."""
+
+        result = await search_literature_logic(params)
+        return LiteratureSearchOutput(**result.model_dump())
 
     @staticmethod
     @function_tool
@@ -122,6 +134,7 @@ get_uniprot_id = STFTools.get_uniprot_id
 save_to_database = STFTools.save_to_database
 fetch_article_content = STFTools.fetch_article_content
 web_search = STFTools.web_search
+search_literature = STFTools.search_literature
 vision_media = STFTools.vision_media
 execute_sql_query = STFTools.execute_sql_query
 find_article_records = STFTools.find_article_records

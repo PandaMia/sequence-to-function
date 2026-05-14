@@ -72,6 +72,35 @@ class WebSearchOutput(BaseModel):
     error: Optional[str] = Field(default=None, description="Search error, if any.")
 
 
+class LiteratureSearchInput(BaseModel):
+    gene: str = Field(..., description="Gene symbol to search for, for example NFE2L2, SOX2, APOE, or POU5F1.")
+    protein_uniprot_id: Optional[str] = Field(default=None, description="Optional UniProt ID to include in the search.")
+    query: Optional[str] = Field(
+        default=None,
+        description="Optional extra topic, for example longevity, mutation effects, variants, domains, or reprogramming.",
+    )
+    max_results: int = Field(default=5, ge=1, le=10, description="Maximum number of source URLs to return.")
+
+
+class LiteratureCandidate(BaseModel):
+    title: str = Field(default="", description="Source title when available.")
+    url: str = Field(..., description="Canonical source URL.")
+    snippet: str = Field(default="", description="Short source-grounded summary of why the source is relevant.")
+    source_type: Literal["research_article", "review", "database_page", "other"] = Field(
+        default="research_article",
+        description="Type of source.",
+    )
+    relevance_score: float = Field(default=1.0, ge=0.0, le=1.0, description="Relevance score from 0 to 1.")
+
+
+class LiteratureSearchOutput(BaseModel):
+    success: bool = Field(..., description="True when one or more candidate source URLs were found.")
+    query: str = Field(..., description="Search query that was executed.")
+    results: list[LiteratureCandidate] = Field(default_factory=list, description="Candidate source URLs to deduplicate and parse.")
+    result_count: int = Field(default=0, description="Number of returned candidates.")
+    error: Optional[str] = Field(default=None, description="Search error, if any.")
+
+
 class VisionMediaInput(BaseModel):
     image_urls: list[str] = Field(default_factory=list, description="Image URLs to analyze. Maximum 8.")
     pdf_urls: list[str] = Field(default_factory=list, description="PDF URLs to analyze. Maximum 1.")

@@ -28,7 +28,7 @@ Set up your environment variables:
 
 ```bash
 # Required: OpenAI API key for agent functionality
-export OPENAI_API_KEY="your-openai-api-key"
+export OPENAI_KEY="your-openai-api-key"
 
 # Optional: Database URL (defaults to a local SQLite file)
 export DATABASE_URL="sqlite+aiosqlite:///databases/sequence_function.db"

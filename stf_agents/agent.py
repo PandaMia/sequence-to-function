@@ -11,6 +11,7 @@ from tools.stf_tools import (
     find_gene_records,
     get_uniprot_id,
     save_to_database,
+    search_literature,
     vision_media,
     web_search,
 )
@@ -26,6 +27,7 @@ class STFAgent(BaseSTFAgent):
             run_config=run_config,
             tools=[
                 fetch_article_content,
+                search_literature,
                 web_search,
                 get_uniprot_id,
                 find_article_records,
