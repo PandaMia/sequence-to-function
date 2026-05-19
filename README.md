@@ -34,6 +34,8 @@ export OPENAI_KEY="your-openai-api-key"
 export DATABASE_URL="sqlite+aiosqlite:///databases/sequence_function.db"
 ```
 
+For production deployments, avoid storing `OPENAI_KEY` directly in `.env`. Use the encrypted local secret manager described in the Deployment section.
+
 #### 2. Install Python Dependencies
 ```bash
 # Install dependencies using uv (creates virtual environment automatically)
@@ -73,3 +75,90 @@ On first startup, the application will:
 - **Data Retrieval**: Query database by article URL, gene, UniProt ID, or read-only SQL
 - **Article Writing**: Generate research content from stored data
 - **Chat Interface**: Interactive UI for all agent capabilities
+
+## Deployment
+
+The recommended public demo setup is to run the FastAPI app on a localhost-only port and terminate TLS through Caddy.
+
+For the server procedure based on `Docker Compose` and host-level `Caddy`, see `DEPLOY_SERVER.md`.
+
+### Backend process
+
+Use port `18081` for this service to avoid the existing services on `18080` and `18501`.
+
+```bash
+# create .env and set HOST, PORT, DATABASE_URL, model settings, limits,
+# and the encrypted secret paths described below
+
+uv sync
+set -a
+source .env
+set +a
+uv run uvicorn app:app --host "${HOST:-127.0.0.1}" --port "${PORT:-18081}"
+```
+
+### Encrypted local secrets
+
+For a self-hosted server, the app can load `OPENAI_KEY` from an encrypted JSON file. This prevents accidentally committing the API key and avoids storing it in the service `.env` file.
+
+Create a Fernet key once on the server:
+
+```bash
+uv run python scripts/secrets.py generate-key
+```
+
+Store that key outside the repository, for example:
+
+```bash
+sudo mkdir -p /etc/sequence-to-function
+sudo sh -c 'printf "%s" "PASTE_GENERATED_KEY_HERE" > /etc/sequence-to-function/secrets.key'
+sudo chmod 600 /etc/sequence-to-function/secrets.key
+```
+
+Create the encrypted secrets file:
+
+```bash
+uv run python scripts/secrets.py encrypt \
+  --output secrets/stf-secrets.enc \
+  --secret OPENAI_KEY
+```
+
+The script prompts for the Fernet key and then for `OPENAI_KEY` without echoing values to the terminal.
+
+Configure the service:
+
+```bash
+STF_ENCRYPTED_SECRETS_FILE=/opt/sequence-to-function/secrets/stf-secrets.enc
+STF_SECRETS_KEY_FILE=/etc/sequence-to-function/secrets.key
+```
+
+Supported secret sources, in priority order:
+
+1. `OPENAI_KEY` environment variable for local development.
+2. `OPENAI_KEY_FILE` pointing to a plain secret file.
+3. `STF_ENCRYPTED_SECRETS_FILE` decrypted with `STF_SECRETS_KEY` or `STF_SECRETS_KEY_FILE`.
+
+Important: local encryption protects secrets at rest and from accidental leaks. It does not protect against an attacker with root access or access to both the encrypted file and the decryption key. For stronger production isolation, use a cloud secret manager or a server-side secret store and inject the secret at runtime.
+
+### Runtime data sensitivity
+
+`databases/sessions.db` stores conversation history when persistent sessions are enabled. For public demos, prefer an ephemeral session DB:
+
+```bash
+STF_SESSION_DB_PATH=/tmp/stf_sessions.db
+```
+
+The main `databases/sequence_function.db` and `data/*.csv` files contain the service knowledge base and source article text. Keep them out of git, but they normally need to exist on the server if you want persisted knowledge-base state.
+
+### Caddy
+
+Add this block to the server Caddyfile:
+
+```caddyfile
+stf.pandamia.org {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:18081
+}
+```
+
+Then reload Caddy on the server.

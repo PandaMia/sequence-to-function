@@ -18,6 +18,7 @@ dependencies = [
     "pandas",
     "mygene",
     "python-dotenv",
+    "cryptography",
 ]
 
 [project.optional-dependencies]
@@ -35,4 +36,4 @@ build-backend = "hatchling.build"
 dev-dependencies = []
 
 [tool.hatch.build.targets.wheel]
-packages = ["stf_agents", "configs", "utils", "runner", "testing_endpoints"]
+packages = ["stf_agents", "configs", "utils", "runner"]

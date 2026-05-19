@@ -1,17 +1,16 @@
 """Sequence-to-Function FastAPI application."""
 
+import os
+
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from app_startup.lifespan import lifespan
 from api.stf.router import router as stf_router
-from testing_endpoints.router import get_testing_router
 
 # Create FastAPI app with lifespan management
 app = FastAPI(lifespan=lifespan)
-testing_router = get_testing_router(lambda: app.state)
 app.include_router(stf_router)
-app.include_router(testing_router)
 
 
 @app.get("/")
@@ -31,4 +30,9 @@ if __name__ == "__main__":
     from app_startup.lifespan import configure_logging
 
     configure_logging()
-    uvicorn.run(app, host="0.0.0.0", port=8080, use_colors=True)
+    uvicorn.run(
+        app,
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8080")),
+        use_colors=True,
+    )

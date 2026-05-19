@@ -9,6 +9,7 @@ from openai import AsyncOpenAI, DefaultAioHttpClient
 from utils.sqlite_utils import ensure_db_folder_exists
 from utils.database_utils import initialize_database
 from utils.app_context import set_app_state_context
+from utils.secret_manager import get_openai_api_key
 from utils.usage_limits import UsageLimiter
 
 logger = logging.getLogger(__name__)
@@ -45,10 +46,7 @@ class AppStateManager:
         # Ensure SQLite database folder exists for session storage
         ensure_db_folder_exists()
 
-        # Get OpenAI API key
-        openai_api_key = os.environ.get("OPENAI_KEY")
-        if not openai_api_key:
-            raise ValueError("OPENAI_KEY environment variable is required")
+        openai_api_key = get_openai_api_key()
 
         # Create AsyncOpenAI client with aiohttp
         openai_client = AsyncOpenAI(

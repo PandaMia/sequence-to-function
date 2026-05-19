@@ -24,8 +24,3 @@ class StfRequest(BaseModel):
         ),
         description="Master model configuration (accepts string or ModelConfig object)"
     )
-
-
-class SQLQueryRequest(BaseModel):
-    """Request model for executing SQL queries in testing endpoints"""
-    query: str = Field(description="SQL query to execute")

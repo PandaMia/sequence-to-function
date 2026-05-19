@@ -1,0 +1,36 @@
+services:
+  stf:
+    build: .
+    container_name: sequence-to-function
+    restart: unless-stopped
+    environment:
+      PORT: "18081"
+      DATABASE_URL: "sqlite+aiosqlite:///databases/sequence_function.db"
+      STF_ENCRYPTED_SECRETS_FILE: "/app/secrets/stf-secrets.enc"
+      STF_SECRETS_KEY_FILE: "/run/secrets/stf_secrets_key"
+      STF_DEFAULT_MODEL: "${STF_DEFAULT_MODEL:-gpt-5.4-nano}"
+      STF_WEB_SEARCH_MODEL: "${STF_WEB_SEARCH_MODEL:-gpt-5.4-nano}"
+      STF_VISION_MODEL: "${STF_VISION_MODEL:-gpt-5.4-nano}"
+      STF_REASONING_EFFORT: "${STF_REASONING_EFFORT:-low}"
+      STF_MAX_OUTPUT_TOKENS: "${STF_MAX_OUTPUT_TOKENS:-4096}"
+      STF_MAX_AGENT_TURNS: "${STF_MAX_AGENT_TURNS:-25}"
+      STF_LIMITS_ENABLED: "${STF_LIMITS_ENABLED:-true}"
+      STF_MAX_MESSAGE_CHARS: "${STF_MAX_MESSAGE_CHARS:-8000}"
+      STF_MAX_REQUESTS_PER_MINUTE: "${STF_MAX_REQUESTS_PER_MINUTE:-5}"
+      STF_MAX_REQUESTS_PER_DAY: "${STF_MAX_REQUESTS_PER_DAY:-100}"
+      STF_MAX_SESSION_REQUESTS_PER_DAY: "${STF_MAX_SESSION_REQUESTS_PER_DAY:-30}"
+      STF_MAX_CONCURRENT_RUNS: "${STF_MAX_CONCURRENT_RUNS:-2}"
+      STF_MAX_WEB_SEARCH_CALLS_PER_SESSION: "${STF_MAX_WEB_SEARCH_CALLS_PER_SESSION:-3}"
+      STF_SESSION_DB_PATH: "${STF_SESSION_DB_PATH:-/tmp/stf_sessions.db}"
+    ports:
+      - "127.0.0.1:18081:18081"
+    volumes:
+      - ./data:/app/data
+      - ./databases:/app/databases
+      - ./secrets:/app/secrets
+    secrets:
+      - stf_secrets_key
+
+secrets:
+  stf_secrets_key:
+    file: /etc/sequence-to-function/secrets.key

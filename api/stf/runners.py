@@ -1,5 +1,6 @@
 """Business logic for STF agent execution."""
 
+import os
 import uuid
 import json
 import logging
@@ -9,7 +10,7 @@ from agents import SQLiteSession
 from agents.items import TResponseInputItem
 
 from app_startup.state import AppState
-from api.stf.schemas import StfRequest
+from configs.endpoints_base_models import StfRequest
 from configs.config import TaskModelConfig
 from stf_agents.agents import create_stf_agent
 from runner.stream import run_agent_stream
@@ -63,7 +64,8 @@ async def run_stf_agent_stream(
         )
 
         # SQLite operations: Create session for conversation history storage
-        stf_session = SQLiteSession(db_path=get_db_path("sessions.db"), session_id=session_id)
+        session_db_path = os.getenv("STF_SESSION_DB_PATH") or get_db_path("sessions.db")
+        stf_session = SQLiteSession(db_path=session_db_path, session_id=session_id)
 
         logger.debug(
             f"Session STF initialized - session_id: {session_id}, model: {request.stf_model.model_name}"

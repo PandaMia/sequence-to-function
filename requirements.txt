@@ -11,3 +11,4 @@ aiohttp
 pandas
 mygene
 python-dotenv
+cryptography

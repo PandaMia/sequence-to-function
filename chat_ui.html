@@ -45,6 +45,30 @@
             animation: glow 2s ease-in-out infinite alternate;
         }
 
+        .header-links {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .header-links a {
+            color: #88ff88;
+            border: 1px solid #00ff00;
+            padding: 0.35rem 0.7rem;
+            text-decoration: none;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            background: rgba(0, 20, 0, 0.75);
+        }
+
+        .header-links a:hover {
+            color: #00ff00;
+            background: rgba(0, 60, 0, 0.9);
+            box-shadow: 0 0 12px rgba(0, 255, 0, 0.45);
+        }
+
         @keyframes glow {
             from { text-shadow: 0 0 10px #00ff00; }
             to { text-shadow: 0 0 20px #00ff00, 0 0 30px #00ff00; }
@@ -601,6 +625,10 @@
     <div class="header">
         <h1>SEQUENCE-TO-FUNCTION MATRIX</h1>
         <p>ANALYZING RESEARCH ARTICLES // EXTRACTING SEQUENCE-FUNCTION RELATIONSHIPS</p>
+        <nav class="header-links" aria-label="External links">
+            <a href="https://github.com/PandaMia" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a href="https://www.linkedin.com/in/aleksey-tep/" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        </nav>
     </div>
 
     <div class="chat-container">

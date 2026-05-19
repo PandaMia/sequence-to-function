@@ -1,1 +1,0 @@
-# Testing endpoints package

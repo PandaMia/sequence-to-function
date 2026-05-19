@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 
 from app_startup.state import AppState
 from app_startup.dependencies import get_app_state
-from api.stf.schemas import StfRequest
+from configs.endpoints_base_models import StfRequest
 from api.stf.runners import run_stf_agent_stream
 from utils.usage_limits import UsageLimitExceeded
 

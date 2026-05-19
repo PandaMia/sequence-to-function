@@ -10,6 +10,7 @@ from typing import Any
 from openai import OpenAI
 
 from tools.schemas import VisionMediaInput, VisionMediaOutput
+from utils.secret_manager import get_openai_api_key
 from utils.stf_tool_utils import download_image_as_data_url, download_pdf_b64
 
 
@@ -25,7 +26,7 @@ def vision_media_logic(params: VisionMediaInput) -> VisionMediaOutput:
         return VisionMediaOutput(notes=[])
 
     try:
-        client = OpenAI(api_key=os.getenv("OPENAIOPENAI_KEY_API_KEY"))
+        client = OpenAI(api_key=get_openai_api_key())
         system_prompt = """
 You are a scientific figure analyst. For each provided image or PDF:
 1. Classify the media type.

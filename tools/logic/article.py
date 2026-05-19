@@ -23,6 +23,7 @@ from tools.schemas import (
     WebSearchOutput,
 )
 from utils.app_context import get_app_state_context, get_session_id_context
+from utils.secret_manager import get_openai_api_key
 from utils.stf_tool_utils import absolute_url, is_relevant_article_image, normalize_html_text
 from utils.usage_limits import UsageLimitExceeded
 
@@ -203,7 +204,7 @@ async def web_search_logic(params: WebSearchInput) -> WebSearchOutput:
     try:
         await _check_web_search_limit()
 
-        client = OpenAI(api_key=os.getenv("OPENAI_KEY"))
+        client = OpenAI(api_key=get_openai_api_key())
         response = client.responses.create(
             model=os.getenv("STF_WEB_SEARCH_MODEL", "gpt-5.4-nano"),
             tools=[{"type": "web_search_preview"}],
@@ -230,7 +231,7 @@ async def search_literature_logic(params: LiteratureSearchInput) -> LiteratureSe
     try:
         await _check_web_search_limit()
 
-        client = OpenAI(api_key=os.getenv("OPENAI_KEY"))
+        client = OpenAI(api_key=get_openai_api_key())
         response = client.responses.create(
             model=os.getenv("STF_WEB_SEARCH_MODEL", "gpt-5.4-nano"),
             tools=[{"type": "web_search_preview"}],
