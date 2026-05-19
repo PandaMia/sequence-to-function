@@ -39,7 +39,7 @@ chmod 700 secrets
 If you want to start from local CSV snapshots, upload them from your local machine:
 
 ```bash
-scp -r ./data deploy@<server-ip>:/srv/sequence-to-function/data
+scp -r ./data/* deploy@<server-ip>:/srv/sequence-to-function/data
 ```
 
 Verify the files on the server:
@@ -234,43 +234,3 @@ If the CSV or database structure changed, check the startup sync logs:
 ```bash
 docker compose logs -f
 ```
-
-## 9. Useful Commands
-
-Container logs:
-
-```bash
-cd /srv/sequence-to-function
-docker compose logs -f
-```
-
-Container status:
-
-```bash
-docker compose ps
-```
-
-Restart the container:
-
-```bash
-docker compose restart
-```
-
-Stop the service:
-
-```bash
-docker compose down
-```
-
-Caddy logs:
-
-```bash
-sudo journalctl -u caddy -n 100 --no-pager
-```
-
-## 10. Security
-
-- Do not put `OPENAI_KEY` in `.env`.
-- Do not commit `secrets/`, `*.enc`, `*.key`, `data/`, or `databases/`.
-- `databases/sessions.db` contains conversation history if persistent sessions are enabled. For public demos, keep `STF_SESSION_DB_PATH=/tmp/stf_sessions.db` unless you explicitly need durable chat history.
-- Local encrypted secrets protect the key from accidental git and `.env` leaks, but not from server root access.

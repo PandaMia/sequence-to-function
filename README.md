@@ -2,7 +2,19 @@
 
 An agent-based system for generating a knowledge base from all publicly available sources regarding the relationships between protein sequences and their functions to support future protein and gene reengineering efforts to combat aging.
 
-## How to Run the Service
+Live app: https://stf.pandamia.org/
+
+## Service Features
+
+- **Single STF Agent**: one consolidated `STFAgent` with function tools for search, article parsing, database access, UniProt lookup, and vision analysis.
+- **Literature Discovery**: search public sources for articles about a gene, protein, UniProt ID, mutation effect, longevity association, or related topic.
+- **Article Parsing**: extract source article text, relevant images, PDFs, citations, and sequence-function evidence.
+- **Vision Analysis**: analyze scientific images and PDFs for sequence-function data that is not available in article text.
+- **Structured Persistence**: store normalized article and sequence-function records in SQLite.
+- **Gene Retrieval**: query stored records by `gene` or `protein_uniprot_id`.
+- **Read-only SQL Access**: execute safe `SELECT` queries against the STF database for inspection and reporting.
+
+## How to Run the Service Locally
 
 ### Prerequisites
 - Python 3.12+
@@ -11,11 +23,7 @@ An agent-based system for generating a knowledge base from all publicly availabl
 
 **Install uv:**
 ```bash
-# macOS and Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 # Or via pip
 pip install uv
@@ -34,7 +42,20 @@ export OPENAI_KEY="your-openai-api-key"
 export DATABASE_URL="sqlite+aiosqlite:///databases/sequence_function.db"
 ```
 
-For production deployments, avoid storing `OPENAI_KEY` directly in `.env`. Use the encrypted local secret manager described in the Deployment section.
+Optional public-demo limits:
+
+```bash
+export STF_LIMITS_ENABLED="true"
+export STF_MAX_MESSAGE_CHARS="8000"
+export STF_MAX_REQUESTS_PER_MINUTE="5"
+export STF_MAX_REQUESTS_PER_DAY="100"
+export STF_MAX_SESSION_REQUESTS_PER_DAY="30"
+export STF_MAX_CONCURRENT_RUNS="2"
+export STF_MAX_WEB_SEARCH_CALLS_PER_SESSION="3"
+export STF_SESSION_DB_PATH="/tmp/stf_sessions.db"
+```
+
+For server deployments, avoid storing `OPENAI_KEY` directly in `.env`. Use encrypted local secrets as described in `DEPLOY_SERVER.md`.
 
 #### 2. Install Python Dependencies
 ```bash
@@ -45,13 +66,31 @@ uv sync
 uv pip install -r requirements.txt
 ```
 
-#### 3. Start the Application
+#### 3. Prepare Local Runtime Directories
+
+```bash
+mkdir -p data databases secrets
+```
+
+If you already have CSV snapshots, place them in:
+
+```text
+data/articles.csv
+data/sequence_data.csv
+```
+
+If these files are missing, the service creates empty CSV snapshots on startup.
+
+#### 4. Start the Application
 ```bash
 # Run the FastAPI application using uv
 uv run uvicorn app:app --host 0.0.0.0 --port 8080
 
+# Or run the app entrypoint
+uv run python app.py
+
 # Or activate the virtual environment and run directly
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 uvicorn app:app --host 0.0.0.0 --port 8080
 ```
 
@@ -59,6 +98,7 @@ The service will be available at:
 - **Main Application**: http://localhost:8080
 - **Chat UI**: http://localhost:8080/ (root path serves the chat interface)
 - **API Documentation**: http://localhost:8080/docs
+- **Health Check**: http://localhost:8080/health
 
 ### Database Initialization
 
@@ -67,98 +107,3 @@ On first startup, the application will:
 2. Create normalized `articles` and `sequence_data` tables
 3. Import missing articles from `data/articles.csv` and missing sequence records from `data/sequence_data.csv` on every startup
 4. Store full article text once in `articles.full_text` and `data/articles.csv`; `data/sequence_data.csv` references articles by `article_id`
-
-### Service Features
-
-- **Article Parsing**: Extract sequence-function data from research papers
-- **Vision Parsing**: AI-powered analysis of scientific figures, tables, and supplementary materials to extract sequence data not available in text
-- **Data Retrieval**: Query database by article URL, gene, UniProt ID, or read-only SQL
-- **Article Writing**: Generate research content from stored data
-- **Chat Interface**: Interactive UI for all agent capabilities
-
-## Deployment
-
-The recommended public demo setup is to run the FastAPI app on a localhost-only port and terminate TLS through Caddy.
-
-For the server procedure based on `Docker Compose` and host-level `Caddy`, see `DEPLOY_SERVER.md`.
-
-### Backend process
-
-Use port `18081` for this service to avoid the existing services on `18080` and `18501`.
-
-```bash
-# create .env and set HOST, PORT, DATABASE_URL, model settings, limits,
-# and the encrypted secret paths described below
-
-uv sync
-set -a
-source .env
-set +a
-uv run uvicorn app:app --host "${HOST:-127.0.0.1}" --port "${PORT:-18081}"
-```
-
-### Encrypted local secrets
-
-For a self-hosted server, the app can load `OPENAI_KEY` from an encrypted JSON file. This prevents accidentally committing the API key and avoids storing it in the service `.env` file.
-
-Create a Fernet key once on the server:
-
-```bash
-uv run python scripts/secrets.py generate-key
-```
-
-Store that key outside the repository, for example:
-
-```bash
-sudo mkdir -p /etc/sequence-to-function
-sudo sh -c 'printf "%s" "PASTE_GENERATED_KEY_HERE" > /etc/sequence-to-function/secrets.key'
-sudo chmod 600 /etc/sequence-to-function/secrets.key
-```
-
-Create the encrypted secrets file:
-
-```bash
-uv run python scripts/secrets.py encrypt \
-  --output secrets/stf-secrets.enc \
-  --secret OPENAI_KEY
-```
-
-The script prompts for the Fernet key and then for `OPENAI_KEY` without echoing values to the terminal.
-
-Configure the service:
-
-```bash
-STF_ENCRYPTED_SECRETS_FILE=/opt/sequence-to-function/secrets/stf-secrets.enc
-STF_SECRETS_KEY_FILE=/etc/sequence-to-function/secrets.key
-```
-
-Supported secret sources, in priority order:
-
-1. `OPENAI_KEY` environment variable for local development.
-2. `OPENAI_KEY_FILE` pointing to a plain secret file.
-3. `STF_ENCRYPTED_SECRETS_FILE` decrypted with `STF_SECRETS_KEY` or `STF_SECRETS_KEY_FILE`.
-
-Important: local encryption protects secrets at rest and from accidental leaks. It does not protect against an attacker with root access or access to both the encrypted file and the decryption key. For stronger production isolation, use a cloud secret manager or a server-side secret store and inject the secret at runtime.
-
-### Runtime data sensitivity
-
-`databases/sessions.db` stores conversation history when persistent sessions are enabled. For public demos, prefer an ephemeral session DB:
-
-```bash
-STF_SESSION_DB_PATH=/tmp/stf_sessions.db
-```
-
-The main `databases/sequence_function.db` and `data/*.csv` files contain the service knowledge base and source article text. Keep them out of git, but they normally need to exist on the server if you want persisted knowledge-base state.
-
-### Caddy
-
-Add this block to the server Caddyfile:
-
-```caddyfile
-stf.pandamia.org {
-    encode zstd gzip
-    reverse_proxy 127.0.0.1:18081
-}
-```
-
-Then reload Caddy on the server.
